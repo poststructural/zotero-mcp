@@ -178,8 +178,10 @@ _HTTP_TRANSPORTS = frozenset({"streamable-http", "sse", "http"})
 
 _CONNECTOR_TOOLSET = "chatgpt-connector"
 
-#: Groups that `all` leaves out; they are enabled only by name.
-_EXPLICIT_ONLY: frozenset[str] = frozenset({"legacy"})
+#: Groups that `all` leaves out; they are enabled only by name. `provenance`
+#: is a fork-specific research log, enabled by name on the server that uses it,
+#: so it stays out of the `all` profile and its context-cost ceiling.
+_EXPLICIT_ONLY: frozenset[str] = frozenset({"legacy", "provenance"})
 
 #: Groups whose every tool needs the ``[semantic]`` extra. On an install
 #: without it they are left out unless named explicitly (#572), so a base

@@ -39,7 +39,7 @@ The `provenance` toolset is off by default. To enable it on the server, add to
 `/opt/zotero-mcp/zotero-mcp.env`:
 
 ```bash
-ZOTERO_MCP_TOOLSETS=default,provenance
+ZOTERO_MCP_TOOLSETS=default,provenance   # `all` does not include it; name it
 ZOTERO_MCP_PROVENANCE_DB=/opt/zotero-mcp/data/provenance.db
 ```
 
