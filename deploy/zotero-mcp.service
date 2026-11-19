@@ -1,0 +1,22 @@
+[Unit]
+Description=zotero-mcp (Zotero web API) behind GitHub OAuth for ChatGPT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zoteromcp
+Group=zoteromcp
+WorkingDirectory=/opt/zotero-mcp
+EnvironmentFile=/opt/zotero-mcp/zotero-mcp.env
+ExecStart=/opt/zotero-mcp/venv/bin/python /opt/zotero-mcp/serve_zotero_oauth.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/zotero-mcp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
