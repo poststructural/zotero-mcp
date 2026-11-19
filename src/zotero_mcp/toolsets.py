@@ -75,6 +75,21 @@ TOOLSETS: dict[str, frozenset[str]] = {
             "zotero_library_coverage",
         }
     ),
+    # Provenance log for literature reviews (Austin's fork): PRISMA 2020-style
+    # record extended through reading, coding and incorporation. Writes only
+    # to its own SQLite file, never to Zotero.
+    "provenance": frozenset(
+        {
+            "provenance_import_draft",
+            "provenance_import_audit",
+            "provenance_screen",
+            "provenance_record_event",
+            "provenance_code",
+            "provenance_trail",
+            "provenance_counts",
+            "provenance_export",
+        }
+    ),
     # Zotero RSS feed subscriptions.
     "feeds": frozenset(
         {
