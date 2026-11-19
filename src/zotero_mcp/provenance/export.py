@@ -61,7 +61,7 @@ def to_svg(c: dict, title: str) -> str:
     rows.append(_box(mx + 420, y, 200, 62, ["Other methods", f"n = {c['identified_other']}"]))
     y2 = 170
     for x in (mx + 100, mx + 310, mx + 520):
-        rows.append(_arrow(x, y + 62, mx + BW / 2 if x != mx + 310 else x, y2))
+        rows.append(_arrow(x, y + 62, mx + BW / 2, y2))
     stages = [
         (["Records identified", f"n = {c['identified']}"], ["Duplicates removed", f"n = {c['duplicates']}"], {}),
         (["Records screened (title, abstract)", f"n = {c['screened']}"],
@@ -80,16 +80,16 @@ def to_svg(c: dict, title: str) -> str:
         if cut:
             lines = cut + _reason_lines(reasons)
             ch = max(h, 22 + 17 * len(lines))
-            rows.append(_box(ex, yy, XW + 60, ch, lines, "x"))
+            rows.append(_box(ex, yy, XW + 60, ch, lines, "b" if cut[0].startswith("Coded") else "x"))
             rows.append(_arrow(mx + BW, yy + h / 2, ex, yy + h / 2))
         if main[0] != "Incorporated":
             rows.append(_arrow(mx + BW / 2, yy + h, mx + BW / 2, yy + 100))
         yy += 100
     # Before-logging lane.
     rows.append(f'<text x="{LX}" y="160" class="lane">Before logging (from drafts)</text>')
-    rows.append(_box(LX, 170, XW, 62, ["Sources in drafts", f"n = {c['prior_total']}"], "p"))
+    rows.append(_box(LX, 170, XW, 62, ["Sources in drafts or audit logs", f"n = {c['prior_total']}"], "p"))
     rows.append(_arrow(LX + XW / 2, 232, LX + XW / 2, 470))
-    rows.append(_box(LX, 470, XW, 62, ["Full text read (audit logs)", f"n = {c['prior_read']}"], "p"))
+    rows.append(_box(LX, 470, XW, 62, ["Full text read in source audits", f"n = {c['prior_read']}"], "p"))
     rows.append(_arrow(LX + XW / 2, 532, LX + XW / 2, 670))
     rows.append(_box(LX, 670, XW, 62, ["Cited in drafts", f"n = {c['prior_incorporated']}"], "p"))
     total = c["incorporated"] + c["prior_incorporated"]
