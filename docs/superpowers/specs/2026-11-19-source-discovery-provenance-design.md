@@ -2,7 +2,7 @@
 
 Date: 2026-11-19
 Requested by: Austin (dissertation, secondary English curriculum and instruction)
-Status: draft for Austin's approval
+Status: draft for Austin's approval (builder-check questions answered 2026-11-19)
 Mockup: https://claude.ai/artifact/PSUyUQXeMBJTmKVAwKZ59b (approved in conversation as the look and feel: "I dig it")
 
 ## 1. Intent
@@ -115,8 +115,25 @@ unique records and shows the per-strand split):
 
 "Other methods" covers prior drafts, advisor suggestions and hand searching.
 Sources already in the drafts before the tool existed enter here, flagged
-`retroactive`, with the draft date as their identification date. This is honest
-under PRISMA 2020 and must be visible on the chart, not hidden.
+`retroactive`, with the draft date as their identification date.
+
+**Before-logging lane (Austin's decision, 2026-11-19).** On the chart these
+retroactive sources sit in a clearly labeled "Before logging (from drafts)" lane
+that enters the flow at Read (if the audit logs show a full-text read) or at
+Incorporated, rather than passing through screening boxes that were never logged.
+The lane is visible and counted, never hidden. A later optional attestation pass
+(Austin confirms reads in batches) can move sources into the normal boxes.
+
+**Baseline searches (Austin's decision, 2026-11-19).** Austin has no records of
+earlier database searches. Instead the tool starts a documented process now: for
+each strand, a written set of search strings and databases (drafted with Austin
+and approved by him before running) is run once as the strand's baseline search,
+dated, and logged as ordinary runs. When a baseline search re-finds a source
+already in the before-logging lane, the record is linked, not duplicated: it
+keeps its retroactive flag and history and also shows the run that re-found it.
+The chart reports how many prior sources the baseline searches recovered, a
+useful check on coverage. *(How re-found records are counted, once and marked
+"also in prior drafts", is Claude's call; Austin can change it.)*
 
 Evidence levels, in order: `metadata` (title, reference-list entry), `abstract`,
 `full_text`, `page_derived` (wording confirmed; printed page inferred from text
@@ -199,6 +216,8 @@ curricular decisions or text selection, strand topic).
 - `provenance_export(strand, format)`: CSV, JSON, and the static PRISMA SVG/PDF.
 
 ### 8.4 Interactive chart
+- Viewer: Austin only (decision, 2026-11-19). Others (Dorothea, committee) get
+  the static export or a snapshot, not the live page.
 - Served by the same process at `/prisma`, matching the mockup: flow boxes,
   strand filter, drill-down to records, full trail, discovery-runs table with
   lineage tree.
@@ -216,7 +235,8 @@ curricular decisions or text selection, strand topic).
 
 1. Log, retroactive import from the four strand drafts and audit logs, counts,
    static export. (Gives a real chart for the existing review first.)
-2. Discovery tools across the four APIs plus open-access lookup.
+2. Discovery tools across the four APIs plus open-access lookup, then the
+   per-strand baseline searches (search strings approved by Austin first).
 3. Interactive `/prisma` page with screening.
 4. Zotero inbox writes, after Austin approves the write key.
 
