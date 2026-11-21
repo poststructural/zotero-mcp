@@ -17,7 +17,7 @@ from zotero_mcp.provenance.sources.base import (  # noqa: F401
 from zotero_mcp.provenance.sources.registry import enabled, get, register, registered, status  # noqa: F401
 
 #: Built-in adapter modules, imported for their @register side effect.
-_BUILTIN = ("openalex",)
+_BUILTIN = ("openalex", "core")
 
 for _mod in _BUILTIN:
     import_module(f"zotero_mcp.provenance.sources.{_mod}")

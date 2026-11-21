@@ -269,3 +269,25 @@ structure that supports them. Each database is one adapter module in
 adapter; others are added from `_template.py`. Every call is logged as a run;
 results enter the log as Identified and are matched by database id, DOI, then
 authors + year. Licensed or open-access indexes only. Guide: `docs/source-adapters.md`.
+
+## 12. Library access ("discovery proxies", added 2026-11-21)
+
+Austin reads through the UConn library with his own NetID login. Discovery now
+ends in links he can click: `discover_access` takes log record ids or DOIs and
+returns, best first, a legal open-access copy (from adapters with the
+`open_access` capability: OpenAlex, CORE), the DOI through UConn's EZproxy, the
+landing page through EZproxy, UConn's link resolver, and a Library Search query.
+
+- Links open in Austin's own browser, where the UConn sign-in and Duo happen.
+  The server never stores, asks for or automates library credentials, and
+  never fetches through the proxy (that would put his NetID session on a
+  server and breach the library's licence terms).
+- `zotero_mcp/provenance/access.py` holds library profiles. `uconn` uses the
+  proxy prefix and DOI form from UConn's stable-link guide (verified
+  2026-11-21) and the Storrs Primo VE search address. The OpenURL address
+  follows Ex Libris' standard pattern and is marked unverified until Austin
+  clicks one.
+- Opening a link records nothing. "Retrieved" is still recorded when Austin
+  (or a confirmed suggestion) says the full text was obtained, with the route.
+- CORE is the first added adapter (search, DOI lookup, open-access copy), with
+  a free `CORE_API_KEY`.
