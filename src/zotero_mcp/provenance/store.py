@@ -51,6 +51,27 @@ CREATE TABLE IF NOT EXISTS event (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS event_strand ON event(strand, record_id);
+CREATE TABLE IF NOT EXISTS run (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    query TEXT NOT NULL DEFAULT '',
+    strand TEXT NOT NULL DEFAULT '',
+    params TEXT NOT NULL DEFAULT '{}',
+    seed_record_id INTEGER REFERENCES record(id),
+    hits INTEGER,
+    new_records INTEGER,
+    error TEXT NOT NULL DEFAULT '',
+    client TEXT NOT NULL DEFAULT '',
+    started_at TEXT NOT NULL,
+    finished_at TEXT
+);
+CREATE TABLE IF NOT EXISTS record_source (
+    record_id INTEGER NOT NULL REFERENCES record(id),
+    source TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    UNIQUE(source, source_id)
+);
 CREATE TABLE IF NOT EXISTS code (
     id INTEGER PRIMARY KEY,
     record_id INTEGER NOT NULL REFERENCES record(id),
@@ -166,8 +187,45 @@ class ProvenanceStore:
         row = self._db.execute("SELECT * FROM record WHERE zotero_key=?", (key,)).fetchone()
         return dict(row) if row else None
 
+    def max_record_id(self) -> int:
+        return int(self._db.execute("SELECT COALESCE(MAX(id), 0) FROM record").fetchone()[0])
+
     def records(self) -> list[dict]:
         return [dict(r) for r in self._db.execute("SELECT * FROM record ORDER BY id")]
+
+    # -- external ids and runs ----------------------------------------------
+    def link_source(self, record_id: int, source: str, source_id: str) -> None:
+        self._db.execute("INSERT OR IGNORE INTO record_source(record_id,source,source_id) VALUES (?,?,?)",
+                         (record_id, source, source_id))
+        self._db.commit()
+
+    def find_by_source(self, source: str, source_id: str) -> dict | None:
+        row = self._db.execute(
+            "SELECT r.* FROM record r JOIN record_source s ON s.record_id=r.id WHERE s.source=? AND s.source_id=?",
+            (source, source_id)).fetchone()
+        return dict(row) if row else None
+
+    def source_ids(self, record_id: int) -> dict[str, str]:
+        return {r["source"]: r["source_id"] for r in self._db.execute(
+            "SELECT source, source_id FROM record_source WHERE record_id=?", (record_id,))}
+
+    def start_run(self, *, kind: str, source: str, query: str = "", strand: str = "",
+                  params: str = "{}", seed_record_id: int | None = None, client: str = "") -> int:
+        if kind not in ("search", "references", "citations"):
+            raise ValueError(f"Unknown run kind {kind!r}")
+        cur = self._db.execute(
+            "INSERT INTO run(kind,source,query,strand,params,seed_record_id,client,started_at) VALUES (?,?,?,?,?,?,?,?)",
+            (kind, source, query, strand, params, seed_record_id, client, _now()))
+        self._db.commit()
+        return int(cur.lastrowid)
+
+    def finish_run(self, run_id: int, *, hits: int | None, new_records: int | None, error: str = "") -> None:
+        self._db.execute("UPDATE run SET hits=?, new_records=?, error=?, finished_at=? WHERE id=?",
+                         (hits, new_records, error, _now(), run_id))
+        self._db.commit()
+
+    def runs(self) -> list[dict]:
+        return [dict(r) for r in self._db.execute("SELECT * FROM run ORDER BY id")]
 
     # -- events ------------------------------------------------------------
     def add_event(

@@ -230,6 +230,8 @@ curricular decisions or text selection, strand topic).
   separate write-enabled key (`ZOTERO_WRITE_API_KEY`) used only by this tool;
   the read-only key stays the default. **Ask Austin before creating or installing
   that key.**
+- Any Zotero tags this tool writes use the `prov:` prefix; Austin's Marginalia
+  app owns `theme:` and `ask:` (2026-11-21).
 
 ## 9. Phasing
 
@@ -256,3 +258,14 @@ approves a deploy.
 - Tests with recorded API fixtures; no live API calls in CI.
 - Exact wording of tool descriptions (they must say that results are metadata
   only until full text is read).
+
+## 11. Source-adapter layer (added 2026-11-21, Austin's request)
+
+Before choosing which databases to add (CORE, BASE, etc.), Austin asked for the
+structure that supports them. Each database is one adapter module in
+`zotero_mcp/provenance/sources/` implementing a small contract (`search`,
+`references`, `citations`, `lookup_doi`, `open_access`, as it can), enabled by
+`ZOTERO_MCP_SOURCES` and its own API-key env vars. OpenAlex is the reference
+adapter; others are added from `_template.py`. Every call is logged as a run;
+results enter the log as Identified and are matched by database id, DOI, then
+authors + year. Licensed or open-access indexes only. Guide: `docs/source-adapters.md`.

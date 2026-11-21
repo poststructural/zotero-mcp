@@ -387,3 +387,163 @@ def provenance_export(format: str = "svg", strand: str | None = None, *, ctx: Co
     if format == "svg":
         return to_svg(compute_counts(store, strand or None), strand or "All strands")
     return "Error: format must be csv, json or svg."
+
+
+# -- discovery across source adapters ------------------------------------------
+
+
+def _sources():
+    from zotero_mcp.provenance import sources  # registers built-in adapters
+
+    return sources
+
+
+def _render_hits(store: ProvenanceStore, ids: list[int], limit: int = 40) -> list[str]:
+    lines = []
+    for rid in ids[:limit]:
+        r = store.record(rid)
+        flag = " [prior draft]" if r["retroactive"] else (" [in Zotero]" if r["zotero_key"] else "")
+        lines.append(f"- #{rid} {r['authors']} ({r['year']}). {r['title'] or '(no title)'}{flag}")
+    if len(ids) > limit:
+        lines.append(f"- … {len(ids) - limit} more (provenance_export for all)")
+    return lines
+
+
+@mcp.tool(
+    name="discover_sources",
+    description="List the scholarly-database adapters, whether each is enabled here, what it can do, and its access terms.",
+)
+def discover_sources(*, ctx: Context) -> str:
+    rows = _sources().status()
+    if not rows:
+        return "No source adapters are registered."
+    out = ["| Source | Enabled | Status | Can do | Access |", "|---|---|---|---|---|"]
+    for r in rows:
+        out.append(f"| {r['label'] or r['name']} (`{r['name']}`) | {'yes' if r['enabled'] else 'no'} | "
+                   f"{r['status']} | {', '.join(r['capabilities'])} | {r['access']} |")
+    return "\n".join(out)
+
+
+@mcp.tool(
+    name="discover_search",
+    description=(
+        "Search enabled scholarly databases (all enabled ones, or those named in `sources`) "
+        "and log each as a run. Results are metadata only and enter the provenance log as "
+        "'identified' (route: database) for `strand`, matched against existing records so "
+        "nothing is double-counted. Returns log record ids for screening."
+    ),
+)
+def discover_search(
+    query: str,
+    strand: str,
+    sources: list[str] | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    limit: int = 25,
+    *,
+    ctx: Context,
+) -> str:
+    from zotero_mcp.provenance.ingest import ingest
+
+    src = _sources()
+    adapters = src.enabled("search", sources)
+    if not adapters:
+        return "Error: no enabled adapter can search. Run discover_sources to see why."
+    store, client = get_store(), _client(ctx)
+    q = src.SearchQuery(text=query, year_from=year_from, year_to=year_to, limit=max(1, min(int(limit), 100)))
+    params = json.dumps({"year_from": year_from, "year_to": year_to, "limit": q.limit})
+    out = [f"# Search: {query} ({strand})"]
+    for a in adapters:
+        run = store.start_run(kind="search", source=a.name, query=query, strand=strand, params=params, client=client)
+        try:
+            recs = a.search(q)
+        except src.SourceUnavailable as e:
+            store.finish_run(run, hits=None, new_records=None, error=str(e))
+            out.append(f"\n## {a.label}: FAILED ({e}). This is not a zero.")
+            continue
+        res = ingest(store, recs, strand=strand, run_id=run, route="database", client=client)
+        store.finish_run(run, hits=len(recs), new_records=res.new)
+        out.append(f"\n## {a.label} (run {run}): {len(recs)} hits, {res.new} new to the log, "
+                   f"{res.refound_prior} already in prior drafts")
+        out += _render_hits(store, res.record_ids)
+    return "\n".join(out)
+
+
+@mcp.tool(
+    name="discover_citations",
+    description=(
+        "Citation dive from one source: direction 'references' (works it cites), 'citations' "
+        "(works citing it) or 'both'. `seed` is a log record id, a DOI, or a database id "
+        "with prefix (e.g. 'openalex:W2922753666'). Logs one run per direction; results enter "
+        "the log as 'identified' (route: citation) for `strand`."
+    ),
+)
+def discover_citations(
+    seed: str,
+    strand: str,
+    direction: str = "both",
+    source: str = "openalex",
+    limit: int = 25,
+    *,
+    ctx: Context,
+) -> str:
+    from zotero_mcp.provenance.ingest import ingest
+
+    src = _sources()
+    if direction not in ("references", "citations", "both"):
+        return "Error: direction must be references, citations or both."
+    try:
+        adapter = src.get(source)
+    except KeyError as e:
+        return f"Error: {e}"
+    if source not in {r["name"] for r in src.status() if r["enabled"]}:
+        return f"Error: source {source!r} is not enabled here. Run discover_sources."
+    store, client = get_store(), _client(ctx)
+
+    seed_rid, source_id = None, None
+    s = str(seed).strip()
+    if s.isdigit():
+        seed_rid = int(s)
+        try:
+            rec = store.record(seed_rid)
+        except KeyError as e:
+            return f"Error: {e}"
+        source_id = store.source_ids(seed_rid).get(source)
+        doi = rec["doi"]
+    elif s.startswith(f"{source}:"):
+        source_id, doi = s.split(":", 1)[1], None
+    else:
+        doi = s
+    try:
+        if source_id is None:
+            if not doi or "lookup_doi" not in adapter.capabilities:
+                return f"Error: no {source} id or DOI to start from for seed {seed!r}."
+            found = adapter.lookup_doi(doi)
+            if found is None:
+                return f"{adapter.label} has no record for DOI {doi}."
+            source_id = found.source_id
+            if seed_rid is not None:
+                store.link_source(seed_rid, source, source_id)
+    except src.SourceUnavailable as e:
+        return f"Error: {adapter.label} lookup failed ({e})."
+
+    dirs = ["references", "citations"] if direction == "both" else [direction]
+    out = [f"# Citation dive from {seed} via {adapter.label} ({strand})"]
+    for d in dirs:
+        if d not in adapter.capabilities:
+            out.append(f"\n## {d}: {adapter.label} does not support this.")
+            continue
+        run = store.start_run(kind=d, source=source, query=source_id, strand=strand,
+                              seed_record_id=seed_rid, client=client)
+        try:
+            recs = getattr(adapter, d)(source_id, limit=max(1, min(int(limit), 100)))
+        except src.SourceUnavailable as e:
+            store.finish_run(run, hits=None, new_records=None, error=str(e))
+            out.append(f"\n## {d}: FAILED ({e}). This is not a zero.")
+            continue
+        res = ingest(store, recs, strand=strand, run_id=run, route="citation", client=client)
+        store.finish_run(run, hits=len(recs), new_records=res.new)
+        out.append(f"\n## {d} (run {run}): {len(recs)} found, {res.new} new to the log, "
+                   f"{res.refound_prior} already in prior drafts")
+        out += _render_hits(store, res.record_ids)
+    return "\n".join(out)

@@ -28,7 +28,8 @@ def to_csv(store: ProvenanceStore) -> str:
 
 
 def to_json(store: ProvenanceStore) -> str:
-    return json.dumps({"records": store.records(), "events": store.events(), "codes": store.codes()},
+    return json.dumps({"records": store.records(), "events": store.events(), "codes": store.codes(),
+                       "runs": store.runs()},
                       indent=1, ensure_ascii=False)
 
 

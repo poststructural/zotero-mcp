@@ -88,6 +88,9 @@ TOOLSETS: dict[str, frozenset[str]] = {
             "provenance_trail",
             "provenance_counts",
             "provenance_export",
+            "discover_sources",
+            "discover_search",
+            "discover_citations",
         }
     ),
     # Zotero RSS feed subscriptions.
