@@ -75,6 +75,24 @@ TOOLSETS: dict[str, frozenset[str]] = {
             "zotero_library_coverage",
         }
     ),
+    # Provenance log for literature reviews (Austin's fork): PRISMA 2020-style
+    # record extended through reading, coding and incorporation. Writes only
+    # to its own SQLite file, never to Zotero.
+    "provenance": frozenset(
+        {
+            "provenance_import_draft",
+            "provenance_import_audit",
+            "provenance_screen",
+            "provenance_record_event",
+            "provenance_code",
+            "provenance_trail",
+            "provenance_counts",
+            "provenance_export",
+            "discover_sources",
+            "discover_search",
+            "discover_citations",
+        }
+    ),
     # Zotero RSS feed subscriptions.
     "feeds": frozenset(
         {
@@ -163,8 +181,10 @@ _HTTP_TRANSPORTS = frozenset({"streamable-http", "sse", "http"})
 
 _CONNECTOR_TOOLSET = "chatgpt-connector"
 
-#: Groups that `all` leaves out; they are enabled only by name.
-_EXPLICIT_ONLY: frozenset[str] = frozenset({"legacy"})
+#: Groups that `all` leaves out; they are enabled only by name. `provenance`
+#: is a fork-specific research log, enabled by name on the server that uses it,
+#: so it stays out of the `all` profile and its context-cost ceiling.
+_EXPLICIT_ONLY: frozenset[str] = frozenset({"legacy", "provenance"})
 
 #: Groups whose every tool needs the ``[semantic]`` extra. On an install
 #: without it they are left out unless named explicitly (#572), so a base

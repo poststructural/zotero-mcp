@@ -32,3 +32,17 @@ sudo systemctl restart zotero-mcp && systemctl status zotero-mcp --no-pager
 sudo systemctl disable --now zotero-mcp
 sudo docker compose -f /opt/zotero-mcp/tunnel/docker-compose.yml down
 ```
+
+## Provenance log (opt-in, phase 1)
+
+The `provenance` toolset is off by default. To enable it on the server, add to
+`/opt/zotero-mcp/zotero-mcp.env`:
+
+```bash
+ZOTERO_MCP_TOOLSETS=default,provenance   # `all` does not include it; name it
+ZOTERO_MCP_PROVENANCE_DB=/opt/zotero-mcp/data/provenance.db
+```
+
+then `sudo install -d -o zoteromcp -g zoteromcp -m 700 /opt/zotero-mcp/data` and
+restart. The tools write only to that SQLite file, never to Zotero. Back it up
+with the rest of `/opt/zotero-mcp/data`.

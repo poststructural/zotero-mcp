@@ -49,12 +49,14 @@ class TestResolveEnabled:
     def test_all_enables_every_group(self):
         # stdio, so the transport-scoped connector group stays off; legacy
         # aliases are opt-in by name only.
-        assert resolve_enabled("all") == set(TOOLSETS) - {CONNECTOR, "legacy"}
+        assert resolve_enabled("all") == set(TOOLSETS) - {CONNECTOR, "legacy", "provenance"}
 
     def test_legacy_is_off_unless_named(self):
         assert "legacy" not in resolve_enabled("")
         assert "legacy" not in resolve_enabled("all")
         assert "legacy" in resolve_enabled("all,legacy")
+        assert "provenance" not in resolve_enabled("all")
+        assert "provenance" in resolve_enabled("all,provenance")
 
     def test_default_token_extends_the_default_profile(self):
         assert resolve_enabled("default") == set(DEFAULT_ON)
@@ -73,7 +75,7 @@ class TestResolveEnabled:
         assert resolve_enabled("scite") == {"scite"}
 
     def test_negation_after_all(self):
-        expected = set(TOOLSETS) - {CONNECTOR, "legacy", "scite"}
+        expected = set(TOOLSETS) - {CONNECTOR, "legacy", "provenance", "scite"}
         assert resolve_enabled("all,-scite") == expected
 
     def test_whitespace_and_case_insensitive(self):
@@ -147,8 +149,9 @@ class TestApplyToolsets:
 
             apply_toolsets(mcp, raw="all", transport="streamable-http")
             everything = listed()
-            assert optional_tool_names() - TOOLSETS["legacy"] <= everything
-            assert not TOOLSETS["legacy"] & everything
+            explicit_only = TOOLSETS["legacy"] | TOOLSETS["provenance"]
+            assert optional_tool_names() - explicit_only <= everything
+            assert not explicit_only & everything
             assert len(everything) > len(core_only)
 
             # Idempotent: re-applying the same spec is stable, and a later
