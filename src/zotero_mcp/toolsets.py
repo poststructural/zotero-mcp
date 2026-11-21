@@ -91,6 +91,7 @@ TOOLSETS: dict[str, frozenset[str]] = {
             "discover_sources",
             "discover_search",
             "discover_citations",
+            "discover_access",
         }
     ),
     # Zotero RSS feed subscriptions.
