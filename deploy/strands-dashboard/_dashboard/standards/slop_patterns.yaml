@@ -1,0 +1,77 @@
+# Slop patterns, v0 (2026-11-02)
+# Built from Austin's own CANON_SLOPExcerpts.docx (26 usable paragraphs), tested against
+# 353 paragraphs of his writing from before Jun 2026 and ~980 sampled published passages.
+# Rates = share of paragraphs with at least one match: [slop, early_own, corpus].
+# Small n: treat as flags for a human look, never as automatic rewrites.
+
+structural:
+  - id: teacher_gloss
+    what: 'Translates a scholar''s point into a hypothetical teacher''s practical situation, in the narrator''s voice.'
+    regex: '\b(For an English teacher|A teacher who|a secondary teacher usually|English teachers know)\b'
+    rates: [0.27, 0.00, 0.00]
+    example: "For an English teacher, the time available is a school year, which makes the problem sharper still."
+    fix: 'Cut, or attribute the application to a study that observed teachers.'
+  - id: callback
+    what: 'Internal motif or callback that stitches sections together ("the book room where this section began").'
+    regex: '\b(where this (section|chapter) began|the same (root|position|process|questions)|in its own right|returns to)\b'
+    rates: [0.27, 0.00, 0.01]
+    example: "Her stock cupboard is the English version of the book room where this section began."
+    fix: 'Replace with an explicit, plain transition naming the move (Dorothea asks for these).'
+  - id: narrator_verdict
+    what: 'The narrator adjudicates between sources ("Kolbas is right that...", "says little about").'
+    regex: '\b(is right|is wrong|gets? (this|it) right|says (little|nothing)|cannot say|does not say)\b'
+    rates: [0.15, 0.00, 0.01]
+    example: "Kolbas is right that a syllabus cannot settle a work's standing in the wider culture."
+    fix: 'State whose claim it is and on what evidence; keep evaluation for the synthesis, flagged as yours (Dorothea theme: attribution).'
+  - id: personified_abstraction
+    what: 'An abstraction acts like an agent, usually in a compact aphorism.'
+    regex: '\b(becomes the argument|does the work|carries the weight|arrived along with|did the choosing)\b'
+    rates: [0.12, 0.00, 0.00]
+    example: "Yesterday's purchase becomes the argument for tomorrow's syllabus."
+    fix: 'Name the people and the mechanism (Dorothea theme: concreteness, identify agents).'
+
+  # Added at Austin's request, 2026-11-02. Rates measured on unique paragraphs.
+  - id: importance_claim
+    what: 'Announces that something matters instead of showing why ("X is important because...").'
+    regex: '\b(important|significant|matters?|mattered|crucial|notable|worth (noting|attention)|instructive|revealing|useful|valuable) (because|for (two|three|several) reasons|here because|in part because)\b'
+    flag: 'any instance'
+    rates_per_1k_words: {dissertation_drafts: 0.03, early_own: 0.05, corpus: 0.02}
+    note: 'Rare in your drafts already (one "valuable because" sentence repeated across versions). Kept as a zero-tolerance flag.'
+    fix: 'Delete the announcement and state the consequence directly.'
+  - id: account_overuse
+    what: 'Overuse of "account" (noun or verb) as a generic label for a source or argument.'
+    regex: '\b(accounts?|accounted)\b'
+    flag: '2+ in one paragraph, or more than 1 per 1,000 words across a document'
+    rates_per_1k_words: {dissertation_drafts: 2.09, slop_excerpts: 1.47, early_own: 0.43, corpus: 0.31}
+    note: 'Your dissertation drafts use it about 7 times as often as published work. Keep "account for" (explain) and literal first-person accounts as data.'
+    fix: 'Name the thing: study, history, argument, defense, survey, memoir; or attribute directly ("For Coles,").'
+  - id: author_led_paragraph
+    what: 'Nearly every sentence in a paragraph opens with the author ("Smith (2019)...", "Smith argues...", "She...").'
+    detect: 'paragraph of 3+ sentences where 60% or more open with an author name, author-year citation, or a pronoun standing for the author'
+    rates: {dissertation_drafts: 0.027, early_own: 0.011, corpus: 0.001}
+    note: 'Rare overall but 27 times the corpus rate in your drafts, concentrated in study-by-study review paragraphs.'
+    fix: 'Lead with the finding or the idea, and move the citation to the end of the sentence or into the middle.'
+
+lexical:
+  # From the academic-writing skill's banned list and common AI vocabulary. These hit ZERO of Austin's
+  # slop excerpts, so they catch generic AI prose, not the slop Austin actually produces.
+  words: [delve, tapestry, underscore, nuanced, multifaceted, pivotal, intricate, realm, "landscape of",
+          "serves as a", "testament to", foster, "plays a crucial role", "it is important to note"]
+
+not_slop:
+  # Common "AI tells" that are NOT discriminative here: frequent in Austin's earlier writing and in published work.
+  - id: not_x_but_y
+    rates: [0.00, 0.13, 0.15]
+  - id: colon_reveal
+    rates: [0.00, 0.09, 0.13]
+  - id: em_dash
+    note: 'Published corpus uses em-dashes heavily; do not flag on their own.'
+  - id: short_closing_sentence
+    rates: [0.15, 0.12, 0.40]
+
+rhythm:
+  # SOFT FLAGS ONLY. Calibration (Nov 2): these did not track Austin's blind scores (|r| < 0.2;
+  # praised vs flagged drafts nearly identical). Report them, never score with them.
+  # Flag a paragraph, not a sentence. Corpus medians per paragraph for body/review prose.
+  sentence_length_sd_min: 9.0      # corpus median 14.4; Austin early 9.0; dissertation drafts 6.7
+  nominalizations_per_100_max: 6.0 # corpus median 4.6; Austin drafts 6.9

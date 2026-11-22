@@ -1,0 +1,5 @@
+// Syncthing ignore list for the Strands folder (same on PC and server)
+__pycache__
+*.pyc
+*.tmp
+Dashboard.html

@@ -1,0 +1,19 @@
+[Unit]
+Description=Strands dashboard (Austin's dissertation review suite)
+After=network-online.target syncthing@pancds.service
+
+[Service]
+User=pancds
+WorkingDirectory=/home/pancds/Strands
+# NVM_BIN is filled in at install time so `codex` is on PATH under systemd
+Environment=PATH=NVM_BIN:/usr/local/bin:/usr/bin:/bin
+Environment=DASH_SERVER=1
+Environment=DASH_PORT=8770
+Environment=DASH_BIND=127.0.0.1
+Environment=DASH_HOSTS=dashboard.austin-unowitz.com
+ExecStart=/usr/bin/python3 /home/pancds/Strands/_dashboard/serve_dashboard.py --no-browser
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
