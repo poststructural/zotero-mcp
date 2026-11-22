@@ -1,0 +1,189 @@
+"""Shared helpers for the private style corpus (paths, database, Zotero web API, text utilities).
+
+Everything stays on this server. The corpus is a style reference only: it is never a
+source of citations, claims or wording for the dissertation.
+"""
+import hashlib, json, os, re, sqlite3, time, urllib.error, urllib.parse, urllib.request
+
+HOME = os.environ.get("STYLE_CORPUS_HOME", os.path.expanduser("~/style_corpus"))
+DB_PATH = os.path.join(HOME, "corpus.db")
+ENV_PATH = os.path.join(HOME, "zotero.env")
+EMB_PATH = os.path.join(HOME, "embeddings.npy")
+EMB_IDS = os.path.join(HOME, "embedding_ids.npy")
+OUT_DIR = os.path.join(HOME, "out")
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+SCHEMA = """
+PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS items(
+  key TEXT PRIMARY KEY, item_type TEXT, title TEXT, creators TEXT, year TEXT, venue TEXT,
+  doi TEXT, tags TEXT, collections TEXT, relevance TEXT, score REAL, reasons TEXT,
+  pdf_key TEXT, pdf_link_mode TEXT, status TEXT DEFAULT 'pending', source TEXT,
+  n_paras INTEGER, n_words INTEGER, note TEXT, updated TEXT);
+CREATE TABLE IF NOT EXISTS paras(
+  id INTEGER PRIMARY KEY, item_key TEXT, seq INTEGER, page_label TEXT, section TEXT,
+  text TEXT, masked TEXT, words INTEGER, role TEXT, cites INTEGER, source TEXT);
+CREATE INDEX IF NOT EXISTS paras_item ON paras(item_key);
+CREATE VIRTUAL TABLE IF NOT EXISTS paras_fts USING fts5(masked, content='paras', content_rowid='id');
+CREATE TABLE IF NOT EXISTS shingles(h INTEGER, pid INTEGER, PRIMARY KEY(h, pid)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);
+"""
+
+
+def db():
+    os.makedirs(HOME, exist_ok=True)
+    con = sqlite3.connect(DB_PATH, timeout=60, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    con.executescript(SCHEMA)
+    return con
+
+
+def load_env():
+    """Read ZOTERO_API_KEY / ZOTERO_LIBRARY_ID / ZOTERO_LIBRARY_TYPE from ~/style_corpus/zotero.env or the environment."""
+    env = {}
+    if os.path.exists(ENV_PATH):
+        for line in open(ENV_PATH, encoding="utf-8"):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip().strip('"').strip("'")
+    for k in ("ZOTERO_API_KEY", "ZOTERO_LIBRARY_ID", "ZOTERO_LIBRARY_TYPE"):
+        if os.environ.get(k): env[k] = os.environ[k]
+    if not env.get("ZOTERO_API_KEY") or not env.get("ZOTERO_LIBRARY_ID"):
+        raise SystemExit(f"Put ZOTERO_API_KEY and ZOTERO_LIBRARY_ID in {ENV_PATH} (chmod 600). A read-only key is enough.")
+    env.setdefault("ZOTERO_LIBRARY_TYPE", "user")
+    return env
+
+
+class Zotero:
+    """Minimal read-only Zotero web API client (GET only, by design)."""
+
+    def __init__(self, env):
+        kind = "groups" if env["ZOTERO_LIBRARY_TYPE"].startswith("group") else "users"
+        self.base = f"https://api.zotero.org/{kind}/{env['ZOTERO_LIBRARY_ID']}"
+        self.headers = {"Zotero-API-Key": env["ZOTERO_API_KEY"], "Zotero-API-Version": "3",
+                        "User-Agent": "style-corpus/0.1"}
+
+    def _get(self, path, params=None, raw=False, tries=5):
+        url = self.base + path + ("?" + urllib.parse.urlencode(params) if params else "")
+        for attempt in range(tries):
+            req = urllib.request.Request(url, headers=self.headers)
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    body = r.read()
+                    backoff = r.headers.get("Backoff")
+                    if backoff: time.sleep(int(backoff))
+                    return (body, r.headers) if raw else (json.loads(body), r.headers)
+            except urllib.error.HTTPError as e:
+                if e.code in (429, 500, 502, 503, 504) and attempt < tries - 1:
+                    time.sleep(int(e.headers.get("Retry-After") or 2 ** (attempt + 1))); continue
+                raise
+            except urllib.error.URLError:
+                if attempt < tries - 1: time.sleep(2 ** (attempt + 1)); continue
+                raise
+
+    def all(self, path, params=None):
+        params = dict(params or {}); params.setdefault("limit", 100); start = 0; out = []
+        while True:
+            params["start"] = start
+            data, h = self._get(path, params)
+            out += data
+            total = int(h.get("Total-Results") or 0)
+            start += len(data)
+            if not data or start >= total: return out
+
+    def file(self, key):
+        body, h = self._get(f"/items/{key}/file", raw=True)
+        return body
+
+    def fulltext(self, key):
+        try:
+            data, _ = self._get(f"/items/{key}/fulltext")
+            return data.get("content") or ""
+        except urllib.error.HTTPError as e:
+            if e.code == 404: return ""
+            raise
+
+
+# ---------------------------------------------------------------- text utilities
+SENT_SPLIT = re.compile(r"(?<=[.!?])[\"”’)]*\s+(?=[A-Z“\"(\[])")
+ABBR = re.compile(r"\b(e\.g|i\.e|et al|U\.S|cf|vs|pp?|Vol|No|Dr|Mr|Ms|St|ch|ed|eds)\.$")
+YEAR = r"(?:1[6-9]|20)\d{2}[a-z]?"
+
+
+def sentences(p):
+    out = []
+    for s in SENT_SPLIT.split(p.strip()):
+        if out and ABBR.search(out[-1]): out[-1] += " " + s
+        else: out.append(s)
+    return [s for s in out if len(s.split()) > 1]
+
+
+def words(s):
+    return re.findall(r"[A-Za-z’'-]+", s)
+
+
+NARRATIVE_CITE = re.compile(r"\b([A-Z][A-Za-z’'\-]+(?:\s+(?:and|&)\s+[A-Z][A-Za-z’'\-]+|\s+et\s+al\.)?)(’s|'s)?\s+\(\s*"
+                            + YEAR + r"(?:\s*[,:]\s*(?:pp?\.\s*)?[\divxlc–\-]+)?\s*\)")
+PAREN_CITE = re.compile(r"\([^()]{0,160}?\b" + YEAR + r"\b[^()]{0,120}?\)")
+LONG_QUOTE = re.compile(r"[“\"]([^”\"]{70,})[”\"]")
+CITE_COUNT = re.compile(r"\b" + YEAR + r"\b")
+
+
+def mask(text):
+    """Hide who/when/what-was-quoted so exemplars teach shape, not content or citations."""
+    t = NARRATIVE_CITE.sub(lambda m: "[Author]" + (m.group(2) or "") + " (YEAR)", text)
+    t = PAREN_CITE.sub("(CITATION)", t)
+    t = LONG_QUOTE.sub("“[quoted passage]”", t)
+    return t
+
+
+def toks(text):
+    return re.findall(r"[a-z0-9]+", text.lower().replace("’", "'"))
+
+
+SHINGLE_N = 8
+
+
+def shingle_hashes(text, n=SHINGLE_N):
+    t = toks(text)
+    out = []
+    for i in range(len(t) - n + 1):
+        h = hashlib.blake2b(" ".join(t[i:i + n]).encode(), digest_size=8).digest()
+        out.append(int.from_bytes(h, "big", signed=True))
+    return out
+
+
+ROLE_RX = {
+    "study_report": r"\b(participants?|interview(?:ed|s)?|survey(?:ed|s)?|sample|respondents|data (?:were|was)|we found|findings|case stud(?:y|ies)|n\s*=|observ(?:ed|ations)|questionnaire|coded)\b",
+    "synthesis": r"\b(studies|scholars|research(?:ers)? (?:has|have)|this (?:body|literature|scholarship)|across (?:these|the)|taken together|the literature|a number of|several)\b",
+    "qualification": r"\b(however|although|though|yet|but|limit(?:ed|ation)s?|caution|did not|does not|less clear|complicat)\w*",
+    "theory": r"\b(discours\w*|subject(?:ivity|ivities)?|power|deleuz\w*|foucault\w*|derrida\w*|assemblage|becoming|ontolog\w*|epistem\w*|ideolog\w*|hegemon\w*|poststructural\w*)\b",
+    "historical": r"\b(1[89]\d0s|in (?:1[89]|20)\d\d|during the|decades?|century|era|movement)\b",
+}
+
+
+def role_of(text):
+    low = text.lower()
+    scores = {k: len(re.findall(rx, low)) for k, rx in ROLE_RX.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] else "general"
+
+
+def docx_paragraphs(path):
+    """Plain paragraphs from a .docx (body before 'Revision notes'/'Appendix:'), stdlib only."""
+    import html, zipfile
+    xml = zipfile.ZipFile(path).read("word/document.xml").decode("utf-8")
+    out = []
+    for p in re.findall(r"<w:p[ >].*?</w:p>", xml, re.S):
+        t = html.unescape("".join(re.findall(r"<w:t(?: [^>]*)?>([^<]*)</w:t>", p))).strip()
+        if not t: continue
+        if re.match(r"^(Revision notes|Revision Notes|\[Transition|Appendix:)", t): break
+        style = re.search(r'<w:pStyle w:val="([^"]+)"', p)
+        head = bool(style and style.group(1).lower().startswith("heading")) or (len(t.split()) < 14 and not t.endswith("."))
+        out.append({"text": t, "heading": head})
+    return out
+
+
+def now():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
