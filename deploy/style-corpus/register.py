@@ -20,12 +20,15 @@ FUNC = set("the a an this these that those in on of for to with by as at from an
            "not no more less other another first second finally drawing building taken together across among within".split())
 
 
+COMMON = set()  # filled in main(): words found at the start of many paragraphs (generic, not source-specific)
+
+
 def frame(s, n=FRAME_N):
-    """Generic opener frame: function words kept, content words -> X, placeholders kept ([Author], (YEAR), [Name])."""
+    """Generic opener frame: function words and common field words kept, rare words -> X, placeholders kept."""
     out = []
     for w in re.findall(r"\[Author\]|\[Name\]|\(YEAR\)|\(CITATION\)|[A-Za-z’'\-]+|[,;:]", s)[: n + 2]:
         lw = w.lower()
-        out.append(w if w.startswith(("[", "(")) or w in ",;:" else (lw if lw in FUNC else "X"))
+        out.append(w if w.startswith(("[", "(")) or w in ",;:" else (lw if lw in FUNC or lw in COMMON else "X"))
         if len([x for x in out if x not in ",;:"]) >= n: break
     return " ".join(out).replace(" ,", ",")
 
@@ -40,6 +43,11 @@ def main():
     con = db()
     rows = con.execute(CAPPED.format(cols="masked, role, cites", where="p.source='pdf' AND i.relevance='core' AND p.words BETWEEN 60 AND 350"),
                        (PER_ITEM,)).fetchall()
+    starts = collections.Counter()
+    for r in rows:
+        ss0 = sentences(r["masked"])
+        if ss0: starts.update({w.lower() for w in re.findall(r"[A-Za-z\u2019'\-]+", ss0[0])[:5]})
+    COMMON.update(w for w, c in starts.items() if c >= max(25, len(rows) // 400))
     open_by = collections.defaultdict(collections.Counter); close_kind = collections.defaultdict(collections.Counter)
     sent_open = collections.Counter(); n_sent = 0; role_n = collections.Counter()
     for r in rows:

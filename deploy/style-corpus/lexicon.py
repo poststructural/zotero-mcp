@@ -25,9 +25,13 @@ REPORT = ("found finds argued argues contended contends noted notes observed obs
           "recounted recounts characterized characterizes framed frames located locates posited posits theorized theorizes "
           "cautioned cautions warned warns questioned questions challenged challenges extended extends complicated complicates "
           "highlighted highlights revealed reveals indicated indicates offered offers recorded records catalogued catalogs "
-          "categorized categorizes compared compares measured measures tracked tracks calls called terms termed").split()
+          "categorized categorizes compared compares measured measures tracked tracks called termed").split()
+# drop forms that are usually nouns after a cite ("the study questions", "[Author] (YEAR) studies")
+REPORT = [v for v in REPORT if v not in set("studies surveys interviews questions challenges frames records offers tracks measures calls terms".split())]
 VERB_AFTER = re.compile(SUBJ + r"\s+(?:also\s+|further\s+|similarly\s+|instead\s+)?(" + "|".join(REPORT) + r")\b", re.I)
-TEACHER_VERB = re.compile(r"\bteachers\s+(?:often\s+|also\s+|sometimes\s+|still\s+)?([a-z]+(?:ed|s)?)\b", re.I)
+TEACHER_VERB = re.compile(r"\bteachers\s+(?:often\s+|also\s+|sometimes\s+|still\s+|may\s+|might\s+|can\s+|could\s+|would\s+|must\s+|should\s+|did\s+not\s+|do\s+not\s+)?([a-z]{3,})\b", re.I)
+NOT_VERB = set("with from that who and the in of for to as are were have had who whom whose which this these their was is be been being also often not can may might could would should must do did does will "
+               "or but at on by about into across like than more less themselves".split())
 HEDGES = ["may", "might", "could", "perhaps", "possibly", "likely", "appear", "appears", "appeared", "seem", "seems",
           "suggest", "suggests", "suggested", "tend to", "tended to", "in part", "somewhat", "relatively", "arguably",
           "to some extent", "largely", "generally", "often", "frequently", "rarely"]
@@ -70,7 +74,7 @@ def main():
             if v not in STOP_VERBS: verbs[v] += 1
         for m in TEACHER_VERB.finditer(r["text"]):
             v = m.group(1).lower()
-            if v not in STOP_VERBS and len(v) > 3: tverbs[v] += 1
+            if v not in STOP_VERBS and v not in NOT_VERB and not v.endswith("ly"): tverbs[v] += 1
     for item, ws in per_item.items(): docfreq.update(ws)
     n_items = len(per_item); field_low = "\n".join(low_parts)
     proper_low = {p.lower() for p in PROPER}

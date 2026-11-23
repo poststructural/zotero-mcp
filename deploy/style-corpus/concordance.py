@@ -28,7 +28,7 @@ def main():
         rx = re.compile(r"\b" + re.escape(term) + r"\w*", re.I)
         rows = con.execute(f"""SELECT p.text, p.page_label, i.creators, i.year, i.title FROM paras p JOIN items i ON i.key=p.item_key
                                WHERE i.relevance IN ({','.join('?'*len(rel))}) AND p.id IN (SELECT rowid FROM paras_fts WHERE paras_fts MATCH ?)""",
-                           (*rel, '"' + term.replace('"', '') + '"')).fetchall()
+                           (*rel, '"' + term.replace('"', '') + '"*')).fetchall()
         by = collections.defaultdict(list); n = 0; srcs = set()
         for r in rows:
             y = int(r["year"]) if (r["year"] or "").isdigit() else None
