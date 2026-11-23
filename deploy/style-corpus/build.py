@@ -13,6 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import db, EMB_PATH, EMB_IDS, OUT_DIR, HOME, docx_paragraphs, words
 import arch
 
+# Books are ~3/4 of the words; cap each source so a handful of monographs can't set the field norm.
+PER_ITEM = int(os.environ.get("STYLE_CORPUS_PER_ITEM", "120"))
+CAPPED = """SELECT {cols} FROM (SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.item_key ORDER BY (p.id * 2654435761) % 1000003) rn
+            FROM paras p JOIN items i ON i.key=p.item_key WHERE {where}) WHERE rn <= ?"""
 EMB_MODEL = os.environ.get("STYLE_CORPUS_EMB_MODEL", "BAAI/bge-small-en-v1.5")
 
 
@@ -73,7 +77,7 @@ def cmd_cliches(a):
     con = db()
     groups = {}
     for rel in ("core", "adjacent", "other"):
-        rows = con.execute("SELECT p.text, p.words FROM paras p JOIN items i ON i.key=p.item_key WHERE i.relevance=?", (rel,)).fetchall()
+        rows = con.execute(CAPPED.format(cols="text, words", where="i.relevance=?"), (rel, PER_ITEM)).fetchall()
         groups[rel] = ("\n".join(r["text"] for r in rows).lower().replace("’", "'"), sum(r["words"] for r in rows))
     strands = strand_texts(a.strands) if a.strands else {}
     st_text = {k: ("\n".join(v).lower().replace("’", "'"), sum(len(words(x)) for x in v)) for k, v in strands.items()}
@@ -123,9 +127,8 @@ def cmd_cliches(a):
 # ------------------------------------------------------------------- architecture profile
 def cmd_profile(a):
     con = db()
-    base = """SELECT p.text, p.role, p.cites FROM paras p JOIN items i ON i.key=p.item_key
-              WHERE p.source='pdf' AND i.relevance=? AND p.words BETWEEN 50 AND 400"""
-    rows = con.execute(base, ("core",)).fetchall()
+    rows = con.execute(CAPPED.format(cols="text, role, cites", where="p.source='pdf' AND i.relevance=? AND p.words BETWEEN 50 AND 400"),
+                       ("core", PER_ITEM)).fetchall()
     prof = {"field_core_all": arch.summarize([r["text"] for r in rows]),
             "field_core_citing": arch.summarize([r["text"] for r in rows if r["cites"] >= 2]),
             "by_role": {}}
