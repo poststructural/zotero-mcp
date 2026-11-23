@@ -43,9 +43,13 @@ def governing(paras, pi, q_start, q_end):
 
 
 def page_after(t, q_end):
-    m = re.match(r"[^()]{0,6}\(([^()]{0,80})\)", t[q_end:q_end + 90])
-    if m:
-        pg = c.PAGE.search(m.group(1))
+    """First page locator after the quote and before the next quotation or the end of the sentence."""
+    m = re.search(r"[.!?](?=\s+[A-Z“\"]|$)", t[q_end:])
+    end = q_end + (m.end() if m else len(t) - q_end)
+    nq = QUOTE.search(t, q_end)
+    if nq and nq.start() < end: end = nq.start()
+    for pm in re.finditer(r"\(([^()]{0,120})\)", t[q_end:end]):
+        pg = c.PAGE.search(pm.group(1))
         if pg: return pg.group(1)
     return None
 
