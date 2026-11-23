@@ -147,6 +147,16 @@ def corpus_block(paras, retriever=None, max_targets=10, k=2, targets=None, basel
     if never:
         parts.append("PHRASES THAT ARE AI-TYPICAL AND RARE IN THIS FIELD (a rewrite must never introduce one; flag existing ones):")
         parts.append("; ".join(never) + "\n")
+    lex_p = os.path.join(OUT_DIR, "lexicon.json")
+    if os.path.exists(lex_p):
+        try:
+            fl = json.load(open(lex_p))["field"]
+            parts.append("FIELD WORD CHOICE (counted from published field writing; use to choose verbs and hedges, never as content):")
+            parts.append("- Verbs the field uses to report studies: " + ", ".join(v for v, _ in fl["reporting_verbs"][:20]))
+            hb = {**fl["hedges_per1k"], **fl["boosters_per1k"]}
+            parts.append("- Hedges/boosters per 1,000 words in the field: " + ", ".join(f"{w} {r}" for w, r in sorted(hb.items(), key=lambda x: -x[1])[:12]) + "\n")
+        except Exception:
+            pass
     used = []
     chosen = [(i, t) for i, t, h in paras if i in set(targets)] if targets is not None else pick_targets(paras, max_targets)
     for i, t in chosen:
