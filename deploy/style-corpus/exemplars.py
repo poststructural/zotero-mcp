@@ -14,6 +14,16 @@ import arch
 STOP = set("the of and to in a is that for on as with by this be are was it from at or an which not their its they his her have has but these those can more such been also than other into how what when who about there were would should could may might between through within".split())
 
 
+def clean_exemplar(t):
+    """Skip fragments: starts mid-sentence (page break), leftover ligatures, unfinished or reference-like text."""
+    t = t.strip()
+    if not t or not (t[0].isupper() or t[0] in "\u201c\"\u2018'[("): return False
+    if re.search("[\ufb00-\ufb06]", t): return False
+    if not re.search(r"[.!?][\"\u201d\u2019)]*$", t): return False
+    if len(re.findall(r"\(CITATION\)|\(YEAR\)", t)) > 8: return False
+    return True
+
+
 class Retriever:
     def __init__(self):
         self.con = db(); self.M = self.ids = self.model = None
@@ -65,7 +75,7 @@ class Retriever:
             s = sim[r["id"]] / top + (0.04 if r["relevance"] == "core" else 0) + (0.03 if r["role"] == want else 0)
             ranked.append((s, r))
         for _, r in sorted(ranked, key=lambda x: -x[0]):
-            if r["item_key"] in seen: continue
+            if r["item_key"] in seen or not clean_exemplar(r["masked"]): continue
             seen.add(r["item_key"]); out.append(r)
             if len(out) >= k: break
         return out
