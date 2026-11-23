@@ -103,7 +103,7 @@ def cmd_meta(args):
                        year=excluded.year,venue=excluded.venue,doi=excluded.doi,tags=excluded.tags,collections=excluded.collections,
                        relevance=excluded.relevance,score=excluded.score,reasons=excluded.reasons,pdf_key=excluded.pdf_key,
                        pdf_link_mode=excluded.pdf_link_mode,updated=excluded.updated""",
-                    (d["key"], d.get("itemType"), d.get("title"), creators(d), year_of(d),
+                    (d["key"], d.get("itemType"), re.sub(r"<[^>]+>", "", d.get("title") or ""), creators(d), year_of(d),
                      d.get("publicationTitle") or d.get("bookTitle") or d.get("publisher") or "", d.get("DOI") or "",
                      json.dumps([t["tag"] for t in d.get("tags", [])]), json.dumps([names.get(c, c) for c in d.get("collections", [])]),
                      rel, s, json.dumps(why), pk, lm, now()))
