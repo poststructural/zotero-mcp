@@ -110,7 +110,10 @@ PREAMBLE = """######## FIELD EXEMPLARS (style anchors only, NOT sources) #######
 Below are paragraphs from published scholarship in Austin's field (secondary English education, curriculum
 studies, poststructural educational research), retrieved from his own library because they do a similar job to
 the draft paragraph named. Names, years, page locators and long quotations are masked.
-ORDER OF PRIORITIES (this section never overrides the task or the evidence rules above):
+ORDER OF PRIORITIES (this section never overrides the task, the rubric, Dorothea's standards or the evidence rules above):
+0. The rubric and Dorothea's standards decide organization, section structure, paragraph order and what each
+   paragraph must do. The field corpus never overrides them; it only informs the direction of an edit once
+   they have decided an edit is needed.
 1. Fix evidence and attribution problems first, exactly as you would without this section: overclaims,
    motives or findings the source does not document, blurred attribution, quotations without pages ([CHECK]).
    Never trade one of those fixes for a style edit, and never turn a needed fix into a softer note.
