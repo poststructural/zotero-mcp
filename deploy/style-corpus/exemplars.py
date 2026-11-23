@@ -109,25 +109,31 @@ def pick_targets(paras, max_targets):
 PREAMBLE = """######## FIELD EXEMPLARS (style anchors only, NOT sources) ########
 Below are paragraphs from published scholarship in Austin's field (secondary English education, curriculum
 studies, poststructural educational research), retrieved from his own library because they do a similar job to
-the draft paragraph named. Author names, years and long quotations are masked.
-How to use them:
-- Use them ONLY to calibrate paragraph architecture and register: how published writers in this field open a
-  paragraph (usually on the concrete study, text, date or claim, not an abstract frame), how they move from report
-  to interpretation, how they hedge, how they hand off to the next paragraph, and how they end (often on the
-  evidence or the next step, not on a restatement of the opener).
-- Never take a claim, fact, finding, example, citation, or any wording of four or more consecutive words from them.
-  They are not evidence for this strand and must never be cited or alluded to. Austin's sources are the only sources.
-- When a suggestion is motivated by the exemplars, say what structural move you are borrowing in "why"
-  (e.g. "field paragraphs open on the study and keep interpretation for the last third").
-- Prefer Austin's own lexicon. A rewrite should sound like his best paragraphs, not like the exemplars.
+the draft paragraph named. Names, years, page locators and long quotations are masked.
+ORDER OF PRIORITIES (this section never overrides the task or the evidence rules above):
+1. Fix evidence and attribution problems first, exactly as you would without this section: overclaims,
+   motives or findings the source does not document, blurred attribution, quotations without pages ([CHECK]).
+   Never trade one of those fixes for a style edit, and never turn a needed fix into a softer note.
+2. Only then use the exemplars, to choose HOW to fix: published paragraphs in this field usually open on the
+   concrete study, text, decision or date and keep interpretation for later; they end on the evidence or the
+   next step, not on a restatement of the opener.
+Rules for using them:
+- Never take a claim, fact, finding, example, citation, or any wording of four or more consecutive words from
+  them. They are not evidence for this strand and must never be cited or alluded to.
+- Match Austin's register and lexicon (formal, analytically specific). Do not make prose chattier or plainer
+  than his best paragraphs; the exemplars calibrate structure, not tone downward.
+- Never introduce a corrective antithesis ("X, not Y" / "not X but Y" / "rather than"), a tagline after a colon,
+  or a "does not show/establish" caveat. Edits that do are discarded. Marking Austin's own synthesis as his
+  ("In my reading", "I read this as") is an attribution fix, not slop.
+- When a suggestion borrows a structural move from the exemplars, name the move in "why".
 """
 
 
-def corpus_block(paras, retriever=None, max_targets=10, k=2, targets=None):
+def corpus_block(paras, retriever=None, max_targets=10, k=2, targets=None, baseline=True):
     """Return (prompt_text, used) where used = [{paragraph, exemplar ids…}] for audit/overlap checks."""
     retriever = retriever or Retriever()
     parts = [PREAMBLE]
-    prof = field_profile()
+    prof = field_profile() if baseline else None
     if prof:
         mine = arch.summarize([t for _, t, h in paras if not h])
         f = prof.get("field_core_citing") or prof.get("field_core_all")

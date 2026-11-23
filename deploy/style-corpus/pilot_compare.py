@@ -141,6 +141,7 @@ def main():
     ap.add_argument("--n", type=int, default=8); ap.add_argument("--k", type=int, default=2)
     ap.add_argument("--engines", default="codex,claude"); ap.add_argument("--out", default=os.path.join(OUT_DIR, "pilot"))
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--baseline-engines", default="codex", help="engines whose corpus prompt includes the field-vs-strand table")
     a = ap.parse_args()
     gr, stems = load_dashboard(a.root)
     if a.strand not in stems: sys.exit(f"Unknown strand; choose {', '.join(stems)}")
@@ -149,15 +150,19 @@ def main():
     targets = [i for i, _ in pick_targets(allp, a.n)]
     sub = [p for p in allp if p[0] in targets]
     base = gr.build_prompt(a.strand, sub)
-    block, used = corpus_block(allp, Retriever(), k=a.k, targets=targets)
+    ret = Retriever()
+    block, used = corpus_block(allp, ret, k=a.k, targets=targets)
+    block_nb, _ = corpus_block(allp, ret, k=a.k, targets=targets, baseline=False)
+    with_table = {e.strip() for e in a.baseline_engines.split(",") if e.strip()}
     corpus = base.replace("\n\n######## STRAND:", "\n\n" + block + "\n\n######## STRAND:", 1)
+    corpus_nb = base.replace("\n\n######## STRAND:", "\n\n" + block_nb + "\n\n######## STRAND:", 1)
     os.makedirs(a.out, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
     open(os.path.join(a.out, f"prompt_corpus_{a.strand}_{stamp}.txt"), "w").write(corpus)
     rnd = random.Random(a.seed)
     con = db(); field = (json.load(open(os.path.join(OUT_DIR, "profile.json"))).get("field_core_citing") if os.path.exists(os.path.join(OUT_DIR, "profile.json")) else {})
     engines = [e.strip() for e in a.engines.split(",") if e.strip()]
-    jobs = {(e, arm): p for e in engines for arm, p in (("A", base), ("B", corpus))}
+    jobs = {(e, arm): p for e in engines for arm, p in (("A", base), ("B", corpus if e in with_table else corpus_nb))}
     print(f"{len(targets)} paragraphs; prompts ~{len(base)//4000}k / ~{len(corpus)//4000}k tokens; running {len(jobs)} reviews…", flush=True)
     answers = {}
     with cf.ThreadPoolExecutor(max_workers=len(jobs)) as ex:

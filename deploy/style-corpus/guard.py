@@ -58,6 +58,16 @@ def new_cliches(old, new):
     return [t for t, rx in never_terms() if len(rx.findall(n)) > len(rx.findall(o))]
 
 
+ANTI = [("corrective antithesis", re.compile(r"\bnot (?:simply |merely |only |just )?[^.;]{1,60}?,? but\b|,\s*not (?:an?|the|by|through|in) [^,.;]{1,50}[,.;]|\brather than\b", re.I)),
+        ("tagline after a colon", re.compile(r":\s+[^.:;]{2,60}\.(?:\s|$)")),
+        ("a \u2018does not show/establish\u2019 caveat", re.compile(r"\b(?:does|do|did|can)(?: not|n\u2019t|n't)(?: by itself| alone)? (?:show|establish|demonstrate|prove|settle)\b", re.I))]
+
+
+def new_patterns(old, new):
+    o, n = old or "", new or ""
+    return [label for label, rx in ANTI if len(rx.findall(n)) > len(rx.findall(o))]
+
+
 def check(old, new, con=None):
     """List of human-readable problems with a proposed rewrite (empty = clean)."""
     if not new: return []
@@ -65,6 +75,8 @@ def check(old, new, con=None):
     for o in overlap(new, con):
         if o["text"] not in " ".join(toks(old or "")):
             probs.append(f"repeats {o['words']} words of published text (“{o['text']}”, {o['source']})")
+    for lab in new_patterns(old, new):
+        probs.append(f"adds {lab}")
     for t in new_cliches(old, new):
         probs.append(f"adds “{t}”, an AI-typical phrase that is rare in your field")
     return probs
