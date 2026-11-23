@@ -130,11 +130,48 @@ LONG_QUOTE = re.compile(r"[“\"]([^”\"]{70,})[”\"]")
 CITE_COUNT = re.compile(r"\b" + YEAR + r"\b")
 
 
+KEEP_CAPS = set("""English American Americans Black White Latinx Latino Latina Latine Indigenous Asian African Native
+Hispanic European Christian Catholic Protestant Jewish Muslim U.S. US UK I Language Arts Common Core State Standards
+God Bible Western Eastern Southern Northern""".split())
+LEAD_OK = set("""The This These That Those In A An As At For From On Of To With By Yet But And Or If When While Although
+Though Because Since After Before During Such Some Many Most Several Each Every Both One Two Three Their His Her Its Our
+We They He She It There Here What Which Who How Why Where Moreover However Instead Still Thus Indeed Similarly""".split())
+CAP_TOK = r"(?:[A-Z][a-zA-Z\u2019'\-]*|[A-Z]\.)"
+CAP_RUN = re.compile(CAP_TOK + r"(?:\s+(?:(?:of|the|and|for|in|on|to|a|de|van|von|la|le|du|del)\s+)?" + CAP_TOK + r")+")
+STUDY_VERB = (r"(?:found|finds|argue[sd]?|argues|note[sd]?|notes|report(?:s|ed)?|show(?:s|ed)?|examine[sd]?|observe[sd]?|"
+              r"suggest(?:s|ed)?|contend(?:s|ed)?|describe[sd]?|explore[sd]?|document(?:s|ed)?|trace[sd]?|conclude[sd]?|"
+              r"claim(?:s|ed)?|call(?:s|ed)?|write[s]?|wrote|survey(?:s|ed)?|interview(?:s|ed)?|analy[sz]e[sd]?|identif(?:y|ies|ied)|"
+              r"demonstrate[sd]?|emphasi[sz]e[sd]?|insist(?:s|ed)?|maintain(?:s|ed)?|propose[sd]?|offer(?:s|ed)?|"
+              r"et al\.|and colleagues|and (?:her|his|their) colleagues)")
+NAME_VERB = re.compile(r"\b([A-Z][a-zA-Z\u2019'\-]+)(?=\s+" + STUDY_VERB + r"\b)")
+POSSESSIVE = re.compile(r"\b([A-Z][a-zA-Z\-]+)(\u2019s|'s)\b")
+MID_CAP = re.compile(r"(?<=[a-z,;:\u2014] )([A-Z][a-z][a-zA-Z\u2019'\-]*)\b")
+YEAR_WORD = re.compile(r"\b(?:1[5-9]|20)\d{2}(s?)\b")
+
+
+def _run(m):
+    words = m.group(0).split()
+    lead = []
+    while words and words[0] in LEAD_OK: lead.append(words.pop(0))
+    caps = [w for w in words if w[:1].isupper()]
+    if not caps or all(w.strip(".,") in KEEP_CAPS for w in caps): return m.group(0)
+    if len(caps) == 1 and not lead and m.start() == 0: return m.group(0)
+    return " ".join(lead + ["[Name]"])
+
+
 def mask(text):
-    """Hide who/when/what-was-quoted so exemplars teach shape, not content or citations."""
+    """Hide who/when/what-was-quoted so exemplars teach shape, not content or citations:
+    citations, long quotations, personal names and multi-word proper names/titles, and years."""
     t = NARRATIVE_CITE.sub(lambda m: "[Author]" + (m.group(2) or "") + " (YEAR)", text)
     t = PAREN_CITE.sub("(CITATION)", t)
-    t = LONG_QUOTE.sub("“[quoted passage]”", t)
+    t = LONG_QUOTE.sub("\u201c[quoted passage]\u201d", t)
+    t = CAP_RUN.sub(_run, t)
+    t = POSSESSIVE.sub(lambda m: m.group(0) if m.group(1) in KEEP_CAPS | LEAD_OK else "[Name]" + m.group(2), t)
+    t = NAME_VERB.sub(lambda m: m.group(0) if m.group(1) in KEEP_CAPS | LEAD_OK else "[Name]", t)
+    t = MID_CAP.sub(lambda m: m.group(1) if m.group(1) in KEEP_CAPS else "[Name]", t)
+    t = YEAR_WORD.sub(lambda m: "[decade]" if m.group(1) else "[year]", t)
+    t = re.sub(r"\[Name\]\.?\s+\[Author\]", "[Author]", t)
+    t = re.sub(r"\[Name\](?:\s+\[Name\])+", "[Name]", t)
     return t
 
 

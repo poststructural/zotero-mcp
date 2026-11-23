@@ -10,7 +10,7 @@ Outputs go to ~/style_corpus/out/. Nothing leaves the server.
 """
 import argparse, glob, json, os, re, sys, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import db, EMB_PATH, EMB_IDS, OUT_DIR, HOME, docx_paragraphs, words
+from common import mask, db, EMB_PATH, EMB_IDS, OUT_DIR, HOME, docx_paragraphs, words
 import arch
 
 # Books are ~3/4 of the words; cap each source so a handful of monographs can't set the field norm.
@@ -45,6 +45,32 @@ def cmd_embed(a):
     np.save(EMB_PATH, M.astype("float16")); np.save(EMB_IDS, np.asarray([r["id"] for r in rows], dtype="int64"))
     con.execute("INSERT OR REPLACE INTO meta VALUES('emb_model', ?)", (EMB_MODEL,)); con.commit()
     print(f"saved {M.shape} -> {EMB_PATH}")
+
+
+def cmd_remask(a):
+    """Recompute the masked column (and its FTS index) with the current mask(); also rejoin words a PDF
+    split at a line break ("chal lenges") when the joined form is a common corpus word and a half is not."""
+    con = db()
+    vocab = collections.Counter()
+    for (t,) in con.execute("SELECT text FROM paras"):
+        vocab.update(re.findall(r"[a-z]+", t.lower()))
+    pair = re.compile(r"\b([A-Za-z]{2,})\s([a-z]{2,})\b")
+    def rejoin(t):
+        def f(m):
+            a, b = m.group(1), m.group(2); j = (a + b).lower()
+            return a + b if vocab[j] >= 5 and min(vocab[a.lower()], vocab[b]) < 3 else m.group(0)
+        return pair.sub(f, t)
+    rows = con.execute("SELECT id, text FROM paras").fetchall()
+    print(f"remasking {len(rows):,} paragraphs…", flush=True)
+    con.execute("INSERT INTO paras_fts(paras_fts) VALUES('delete-all')")
+    for n, r in enumerate(rows, 1):
+        m = mask(rejoin(r["text"]))
+        con.execute("UPDATE paras SET masked=? WHERE id=?", (m, r["id"]))
+        con.execute("INSERT INTO paras_fts(rowid, masked) VALUES(?,?)", (r["id"], m))
+        if n % 50000 == 0: con.commit(); print(f"  {n:,}", flush=True)
+    con.commit()
+    left = con.execute("SELECT COUNT(*) FROM paras WHERE masked GLOB '*[12][0-9][0-9][0-9]*'").fetchone()[0]
+    print(f"done; paragraphs still containing a 4-digit number: {left:,}. Re-run `build.py embed` next.")
 
 
 # ------------------------------------------------------------------- phrase rates
@@ -152,7 +178,7 @@ def cmd_profile(a):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("embed")
+    sub.add_parser("embed"); sub.add_parser("remask")
     c = sub.add_parser("cliches"); c.add_argument("--list", default=os.path.join(HOME, "ai_cliches_corpus.json"))
     c.add_argument("--strands", default="~/Strands"); c.add_argument("--rare", type=float, default=2.0); c.add_argument("--normal", type=float, default=10.0)
     p = sub.add_parser("profile"); p.add_argument("--strands", default="~/Strands")
@@ -164,4 +190,4 @@ if __name__ == "__main__":
         except SystemExit as e: print(e)
         cmd_cliches(a); cmd_profile(a)
     else:
-        {"embed": cmd_embed, "cliches": cmd_cliches, "profile": cmd_profile}[a.cmd](a)
+        {"embed": cmd_embed, "remask": cmd_remask, "cliches": cmd_cliches, "profile": cmd_profile}[a.cmd](a)

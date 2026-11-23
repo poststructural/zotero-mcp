@@ -146,7 +146,8 @@ TERMINAL = re.compile(r"[.!?:][\"”’)\]]*$")
 
 def clean(t):
     import unicodedata
-    t = t.replace("\u00ad", "")
+    t = re.sub("\u00ad\\s*", "", t)  # soft hyphen at a line break
+    t = re.sub("(\\w)[\u2010\u2011]\\s*\\n\\s*(\\w)", r"\\1\\2", t)
     t = re.sub("[\ufb00-\ufb06]", lambda m: unicodedata.normalize("NFKC", m.group(0)), t)  # ligatures
     t = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", t)
     t = re.sub(r"\s+", " ", t).strip()
