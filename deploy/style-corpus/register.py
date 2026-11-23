@@ -110,6 +110,14 @@ def main():
         md += ["## 7. Phrase screen (AI-typical phrases measured against the field)", "",
                f"Never introduce ({len(never)}): " + ", ".join(json.loads(x) for x in never), "",
                f"Common in the field, so fine in moderation ({len(normal)}): " + ", ".join(json.loads(x) for x in normal), ""]
+    ng_path = os.path.join(OUT_DIR, "field_ngrams.json")
+    if os.path.exists(ng_path):
+        ng = json.load(open(ng_path, encoding="utf-8")); ph = ng["phrases"]; sn = list(ng["strands"])
+        top = sorted(ph, key=lambda g: -ph[g]["sources"])[:60]
+        md += ["## 7b. Common academic phrases in the field (3–5 words, top 60 by number of sources)", "",
+               f"Counted in {ng['sources']} core sources (masked, capped per source); full list of 300 in field_ngrams.md. "
+               "Rates per 10,000 words: field, then " + ", ".join(sn) + ".", "",
+               "; ".join(f"{g} ({ph[g]['sources']} src; {ph[g]['per10k']} | " + " / ".join(str(ng['strands'][n]['per10k'][g]) for n in sn) + ")" for g in top), ""]
     md += ["## 8. Checklist for a revision", "",
            "- Open on the concrete: the study, text, district, date, decision or named position. Keep interpretation for the second half.",
            "- End on evidence or the hand-off to the next paragraph, not a sentence restating the opener.",
