@@ -132,7 +132,11 @@ CITE_COUNT = re.compile(r"\b" + YEAR + r"\b")
 
 KEEP_CAPS = set("""English American Americans Black White Latinx Latino Latina Latine Indigenous Asian African Native
 Hispanic European Christian Catholic Protestant Jewish Muslim U.S. US UK I Language Arts Common Core State Standards
-God Bible Western Eastern Southern Northern""".split())
+God Bible Western Eastern Southern Northern Supreme Court Courts Congress Constitution Amendment First Fourteenth
+United States Board Boards Education Department School Schools District Districts County Counties City State States
+Federal National Association Council University College Library Libraries Act Bill Senate House Legislature
+Republican Republicans Democrat Democrats Democratic Party Christianity Islam Bible Black English""".split())
+PROPER = set()   # filled by build.py remask from corpus statistics (capitalized-only words = names/places)
 LEAD_OK = set("""The This These That Those In A An As At For From On Of To With By Yet But And Or If When While Although
 Though Because Since After Before During Such Some Many Most Several Each Every Both One Two Three Their His Her Its Our
 We They He She It There Here What Which Who How Why Where Moreover However Instead Still Thus Indeed Similarly""".split())
@@ -145,7 +149,7 @@ STUDY_VERB = (r"(?:found|finds|argue[sd]?|argues|note[sd]?|notes|report(?:s|ed)?
               r"et al\.|and colleagues|and (?:her|his|their) colleagues)")
 NAME_VERB = re.compile(r"\b([A-Z][a-zA-Z\u2019'\-]+)(?=\s+" + STUDY_VERB + r"\b)")
 POSSESSIVE = re.compile(r"\b([A-Z][a-zA-Z\-]+)(\u2019s|'s)\b")
-MID_CAP = re.compile(r"(?<=[a-z,;:\u2014] )([A-Z][a-z][a-zA-Z\u2019'\-]*)\b")
+MID_CAP = re.compile(r"(?:(?<=[a-z,;:] )|(?<=[\u2014\u2013(]))([A-Z][a-z][a-zA-Z\u2019'\-]*)\b")
 YEAR_WORD = re.compile(r"\b(?:1[5-9]|20)\d{2}(s?)\b")
 
 
@@ -155,23 +159,30 @@ def _run(m):
     while words and words[0] in LEAD_OK: lead.append(words.pop(0))
     caps = [w for w in words if w[:1].isupper()]
     if not caps or all(w.strip(".,") in KEEP_CAPS for w in caps): return m.group(0)
-    if len(caps) == 1 and not lead and m.start() == 0: return m.group(0)
-    return " ".join(lead + ["[Name]"])
+    if len(caps) == 1 and not lead and m.start() == 0 and caps[0] not in PROPER: return m.group(0)
+    out = [w if (w.strip(".,") in KEEP_CAPS or not w[:1].isupper()) else "[Name]" for w in words]
+    return " ".join(lead + out)
+
+
+PAGE_LOC = re.compile(r"\((?:p|pp|para)\.\s*[\divxlc\u2013\-]+\)")
 
 
 def mask(text):
     """Hide who/when/what-was-quoted so exemplars teach shape, not content or citations:
     citations, long quotations, personal names and multi-word proper names/titles, and years."""
-    t = NARRATIVE_CITE.sub(lambda m: "[Author]" + (m.group(2) or "") + " (YEAR)", text)
+    t = NARRATIVE_CITE.sub(lambda m: (m.group(1) if m.group(1) in KEEP_CAPS else "[Author]") + (m.group(2) or "") + " (YEAR)", text)
     t = PAREN_CITE.sub("(CITATION)", t)
     t = LONG_QUOTE.sub("\u201c[quoted passage]\u201d", t)
     t = CAP_RUN.sub(_run, t)
     t = POSSESSIVE.sub(lambda m: m.group(0) if m.group(1) in KEEP_CAPS | LEAD_OK else "[Name]" + m.group(2), t)
     t = NAME_VERB.sub(lambda m: m.group(0) if m.group(1) in KEEP_CAPS | LEAD_OK else "[Name]", t)
     t = MID_CAP.sub(lambda m: m.group(1) if m.group(1) in KEEP_CAPS else "[Name]", t)
+    if PROPER:
+        t = re.sub(r"\b[A-Z][a-zA-Z\u2019'\-]+\b", lambda m: "[Name]" if m.group(0) in PROPER else m.group(0), t)
+    t = PAGE_LOC.sub("(PAGE)", t)
     t = YEAR_WORD.sub(lambda m: "[decade]" if m.group(1) else "[year]", t)
     t = re.sub(r"\[Name\]\.?\s+\[Author\]", "[Author]", t)
-    t = re.sub(r"\[Name\](?:\s+\[Name\])+", "[Name]", t)
+    t = re.sub(r"\[Name\](?:\s+(?:of\s+|and\s+|the\s+)?\[Name\])+", "[Name]", t)
     return t
 
 

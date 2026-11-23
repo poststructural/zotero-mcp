@@ -51,20 +51,31 @@ def cmd_remask(a):
     """Recompute the masked column (and its FTS index) with the current mask(); also rejoin words a PDF
     split at a line break ("chal lenges") when the joined form is a common corpus word and a half is not."""
     con = db()
-    vocab = collections.Counter()
+    import common
+    vocab = collections.Counter(); cap_mid = collections.Counter()
     for (t,) in con.execute("SELECT text FROM paras"):
         vocab.update(re.findall(r"[a-z]+", t.lower()))
+        cap_mid.update(re.findall(r"(?<=[a-z,;] )([A-Z][a-z]+)\b", t))
+    low = collections.Counter()
+    for (t,) in con.execute("SELECT text FROM paras"):
+        low.update(re.findall(r"\b[a-z][a-z]+\b", t))
+    # words that (almost) only ever appear capitalized mid-sentence are names, places, titles
+    common.PROPER = {w for w, n in cap_mid.items() if n >= 3 and low[w.lower()] < 0.1 * n} - common.KEEP_CAPS
+    print(f"{len(common.PROPER):,} proper nouns learned from the corpus", flush=True)
+    SUFFIX = {"ed", "ing", "tion", "tions", "ment", "ments", "ly", "er", "ers", "es", "al", "ity", "ive", "ence", "ance", "ism", "ist", "ize", "ise", "ous", "ful"}
     pair = re.compile(r"\b([A-Za-z]{2,})\s([a-z]{2,})\b")
     def rejoin(t):
         def f(m):
-            a, b = m.group(1), m.group(2); j = (a + b).lower()
-            return a + b if vocab[j] >= 5 and min(vocab[a.lower()], vocab[b]) < 3 else m.group(0)
+            a, b = m.group(1), m.group(2); j = (a + b).lower(); n = vocab[j]
+            if n < 5: return m.group(0)
+            if b in SUFFIX or min(vocab[a.lower()], vocab[b]) * 3 < n: return a + b
+            return m.group(0)
         return pair.sub(f, t)
     rows = con.execute("SELECT id, text FROM paras").fetchall()
     print(f"remasking {len(rows):,} paragraphs…", flush=True)
     con.execute("INSERT INTO paras_fts(paras_fts) VALUES('delete-all')")
     for n, r in enumerate(rows, 1):
-        m = mask(rejoin(r["text"]))
+        m = common.mask(rejoin(r["text"]))
         con.execute("UPDATE paras SET masked=? WHERE id=?", (m, r["id"]))
         con.execute("INSERT INTO paras_fts(rowid, masked) VALUES(?,?)", (r["id"], m))
         if n % 50000 == 0: con.commit(); print(f"  {n:,}", flush=True)
