@@ -44,7 +44,7 @@ class Retriever:
     def _rows(self, ids):
         if not ids: return []
         q = f"""SELECT p.id, p.item_key, p.masked, p.text, p.role, p.words, p.page_label, i.relevance, i.title, i.creators, i.year
-                FROM paras p JOIN items i ON i.key=p.item_key WHERE p.id IN ({','.join('?' * len(ids))})"""
+                FROM paras p JOIN items i ON i.key=p.item_key WHERE p.source != 'boilerplate' AND p.id IN ({','.join('?' * len(ids))})"""
         by = {r["id"]: r for r in self.con.execute(q, ids).fetchall()}
         return [by[i] for i in ids if i in by]
 

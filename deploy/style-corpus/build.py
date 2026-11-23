@@ -16,7 +16,7 @@ import arch
 # Books are ~3/4 of the words; cap each source so a handful of monographs can't set the field norm.
 PER_ITEM = int(os.environ.get("STYLE_CORPUS_PER_ITEM", "120"))
 CAPPED = """SELECT {cols} FROM (SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.item_key ORDER BY (p.id * 2654435761) % 1000003) rn
-            FROM paras p JOIN items i ON i.key=p.item_key WHERE {where}) WHERE rn <= ?"""
+            FROM paras p JOIN items i ON i.key=p.item_key WHERE ({where}) AND p.source != 'boilerplate') WHERE rn <= ?"""
 EMB_MODEL = os.environ.get("STYLE_CORPUS_EMB_MODEL", "BAAI/bge-small-en-v1.5")
 
 
@@ -170,6 +170,16 @@ def cmd_cliches(a):
 
 
 # ------------------------------------------------------------------- architecture profile
+def cmd_clean(a):
+    """Mark database cover pages / download stamps as source='boilerplate' (kept, never used). No rows are deleted."""
+    from common import BOILER
+    con = db(); ids = [r["id"] for r in con.execute("SELECT id, text FROM paras WHERE source != 'boilerplate'") if BOILER.search(r["text"])]
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        con.execute(f"UPDATE paras SET source='boilerplate' WHERE id IN ({','.join('?' * len(chunk))})", chunk)
+    con.commit(); print(f"marked {len(ids)} boilerplate paragraphs")
+
+
 def cmd_profile(a):
     con = db()
     rows = con.execute(CAPPED.format(cols="text, role, cites", where="p.source='pdf' AND i.relevance=? AND p.words BETWEEN 50 AND 400"),
@@ -197,7 +207,7 @@ def cmd_profile(a):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("embed"); sub.add_parser("remask")
+    sub.add_parser("embed"); sub.add_parser("remask"); sub.add_parser("clean")
     c = sub.add_parser("cliches"); c.add_argument("--list", default=os.path.join(HOME, "ai_cliches_corpus.json"))
     c.add_argument("--strands", default="~/Strands"); c.add_argument("--rare", type=float, default=2.0); c.add_argument("--normal", type=float, default=10.0)
     p = sub.add_parser("profile"); p.add_argument("--strands", default="~/Strands")
@@ -209,4 +219,4 @@ if __name__ == "__main__":
         except SystemExit as e: print(e)
         cmd_cliches(a); cmd_profile(a)
     else:
-        {"embed": cmd_embed, "remask": cmd_remask, "cliches": cmd_cliches, "profile": cmd_profile}[a.cmd](a)
+        {"embed": cmd_embed, "remask": cmd_remask, "cliches": cmd_cliches, "profile": cmd_profile, "clean": cmd_clean}[a.cmd](a)

@@ -15,7 +15,7 @@ Read-only against Zotero: this script only issues GET requests.
 """
 import argparse, collections, concurrent.futures as cf, json, os, re, sys, tempfile, threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (Zotero, db, load_env, mask, role_of, shingle_hashes, CITE_COUNT, now, words)
+from common import (Zotero, db, load_env, mask, role_of, shingle_hashes, CITE_COUNT, BOILER, now, words)
 
 # ------------------------------------------------------------ field relevance
 CORE_VENUES = [
@@ -209,6 +209,7 @@ def keep(t):
     if len(CITE_COUNT.findall(t)) > nw / 10: return False                # reference-list fragments
     if sum(1 for x in w if x.isupper() and len(x) > 2) > nw / 5: return False
     if not re.search(r"\b(the|and|of|to|in)\b", t): return False
+    if BOILER.search(t): return False
     return True
 
 

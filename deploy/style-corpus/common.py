@@ -127,6 +127,12 @@ NARRATIVE_CITE = re.compile(r"\b([A-Z][A-Za-z’'\-]+(?:\s+(?:and|&)\s+[A-Z][A-Z
                             + YEAR + r"(?:\s*[,:]\s*(?:pp?\.\s*)?[\divxlc–\-]+)?\s*\)")
 PAREN_CITE = re.compile(r"\([^()]{0,160}?\b" + YEAR + r"\b[^()]{0,120}?\)")
 LONG_QUOTE = re.compile(r"[“\"]([^”\"]{70,})[”\"]")
+# Database/publisher cover pages and download stamps (JSTOR, Project MUSE, ProQuest, Taylor & Francis, SAGE...)
+BOILER = re.compile(r"JSTOR is a not-for-profit|This content downloaded from|Your use of the JSTOR archive|"
+                    r"terms and conditions of use|Terms & Conditions of access and use|Project MUSE|ProQuest|"
+                    r"All use subject to|Full Terms & Conditions|Reprints and permissions|sagepub\.com/journalsPermissions|"
+                    r"For personal use only|Downloaded by \[|Copyright of .{0,120} is the property of|"
+                    r"users may print, download, or email articles", re.I)
 CITE_COUNT = re.compile(r"\b" + YEAR + r"\b")
 
 

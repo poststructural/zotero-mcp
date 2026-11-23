@@ -31,7 +31,7 @@ REPORT = [v for v in REPORT if v not in set("studies surveys interviews question
 VERB_AFTER = re.compile(SUBJ + r"\s+(?:also\s+|further\s+|similarly\s+|instead\s+)?(" + "|".join(REPORT) + r")\b", re.I)
 TEACHER_VERB = re.compile(r"\bteachers\s+(?:often\s+|also\s+|sometimes\s+|still\s+|may\s+|might\s+|can\s+|could\s+|would\s+|must\s+|should\s+|did\s+not\s+|do\s+not\s+)?([a-z]{3,})\b", re.I)
 NOT_VERB = set("with from that who and the in of for to as are were have had who whom whose which this these their was is be been being also often not can may might could would should must do did does will "
-               "or but at on by about into across like than more less themselves".split())
+               "or but at on by about into across like than more less themselves college colleges".split())
 HEDGES = ["may", "might", "could", "perhaps", "possibly", "likely", "appear", "appears", "appeared", "seem", "seems",
           "suggest", "suggests", "suggested", "tend to", "tended to", "in part", "somewhat", "relatively", "arguably",
           "to some extent", "largely", "generally", "often", "frequently", "rarely"]
