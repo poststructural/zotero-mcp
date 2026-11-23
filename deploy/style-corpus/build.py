@@ -63,14 +63,22 @@ def cmd_remask(a):
     common.PROPER = {w for w, n in cap_mid.items() if n >= 3 and low[w.lower()] < 0.1 * n} - common.KEEP_CAPS
     print(f"{len(common.PROPER):,} proper nouns learned from the corpus", flush=True)
     SUFFIX = {"ed", "ing", "tion", "tions", "ment", "ments", "ly", "er", "ers", "es", "al", "ity", "ive", "ence", "ance", "ism", "ist", "ize", "ise", "ous", "ful"}
-    pair = re.compile(r"\b([A-Za-z]{2,})\s([a-z]{2,})\b")
     def rejoin(t):
-        def f(m):
-            a, b = m.group(1), m.group(2); j = (a + b).lower(); n = vocab[j]
-            if n < 5: return m.group(0)
-            if b in SUFFIX or min(vocab[a.lower()], vocab[b]) * 3 < n: return a + b
-            return m.group(0)
-        return pair.sub(f, t)
+        """Token-by-token (so overlapping pairs like 'the stu dents' are seen) join of line-break splits."""
+        parts = t.split(" "); out = []; i = 0
+        while i < len(parts):
+            a = parts[i]
+            if i + 1 < len(parts):
+                b = parts[i + 1]
+                ca, cb = re.sub(r"\W", "", a).lower(), re.match(r"[a-z]+", b)
+                if ca.isalpha() and len(ca) >= 2 and cb:
+                    core_b = cb.group(0); n = vocab[ca + core_b]
+                    if n >= 5 and (core_b in SUFFIX or vocab[ca] * 3 < n or vocab[core_b] * 3 < n) and not (vocab[ca] > n and vocab[core_b] > n):
+                        out.append(a + b); i += 2; continue
+            out.append(a); i += 1
+        return " ".join(out)
+    with open(os.path.join(HOME, "proper_nouns.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(sorted(common.PROPER)))
     rows = con.execute("SELECT id, text FROM paras").fetchall()
     print(f"remasking {len(rows):,} paragraphs…", flush=True)
     con.execute("INSERT INTO paras_fts(paras_fts) VALUES('delete-all')")

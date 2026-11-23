@@ -137,6 +137,11 @@ United States Board Boards Education Department School Schools District District
 Federal National Association Council University College Library Libraries Act Bill Senate House Legislature
 Republican Republicans Democrat Democrats Democratic Party Christianity Islam Bible Black English""".split())
 PROPER = set()   # filled by build.py remask from corpus statistics (capitalized-only words = names/places)
+try:
+    with open(os.path.join(HOME, "proper_nouns.txt"), encoding="utf-8") as _f:
+        PROPER = {w.strip() for w in _f if w.strip()}
+except OSError:
+    pass
 LEAD_OK = set("""The This These That Those In A An As At For From On Of To With By Yet But And Or If When While Although
 Though Because Since After Before During Such Some Many Most Several Each Every Both One Two Three Their His Her Its Our
 We They He She It There Here What Which Who How Why Where Moreover However Instead Still Thus Indeed Similarly""".split())
