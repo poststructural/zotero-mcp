@@ -481,6 +481,7 @@ def render_page(root, strands, name, token):
     def removed_cards(after):
         out = []
         for b in removed.get(after, []):
+            if b["notes"]: continue  # revision notes now live in "Revision notes/", not in the manuscript
             h = sha("removed:" + b["text"])
             if h in rv: continue
             out.append(f'''<article class="para removed need" id="r{b["i"]}" data-sec="{E(cur_sec[0])}">
