@@ -65,7 +65,7 @@ FORMAT OF EACH SUGGESTION:
 - "paragraph": the number shown in brackets before the paragraph.
 - "old": an exact, character-for-character copy of a short span from that paragraph (a phrase or one or two sentences; never the whole paragraph unless it is one sentence). It must occur only once in that paragraph.
 - "new": the replacement for exactly that span, or null for a comment-only flag.
-- "why": one or two plain sentences naming the problem (cite the rubric dimension, Dorothea standard or slop pattern id where one applies).
+- "why": one or two plain sentences (refer to other paragraphs by their opening words, not by bracket number) naming the problem (cite the rubric dimension, Dorothea standard or slop pattern id where one applies).
 Give at most 30 suggestions, most important first. Skip trivia.
 
 "overall": 120-250 words. Score the rubric dimensions that apply (1-4) with a short quoted piece of evidence for each, name the single highest-leverage improvement, and note anything you think Claude-style revision may have flattened. Plain prose, no headings.
@@ -107,10 +107,34 @@ def manuscript(path):
             if p["text"].strip() and not p["notes"]]
 
 
+def _corpus(cmd, payload, extra=()):
+    """Ask the private style corpus (its own venv, via dashboard_hook.py). Only runs when
+    gpt_settings.json has "style_corpus": true. Returns parsed JSON, or None on ANY error,
+    so the dashboard keeps working when the corpus is missing or down."""
+    try:
+        st = settings()
+        if not st.get("style_corpus"): return None
+        py = st.get("style_corpus_python", os.path.expanduser("~/style_corpus/venv/bin/python"))
+        hook = st.get("style_corpus_hook", os.path.expanduser("~/style-corpus-src/deploy/style-corpus/dashboard_hook.py"))
+        if not (os.path.exists(py) and os.path.exists(hook)): return None
+        kw = {}
+        if os.name == "nt": kw["creationflags"] = 0x08000000  # no console window
+        r = subprocess.run([py, hook, cmd, *extra], input=json.dumps(payload), capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=300, cwd=os.path.dirname(hook), **kw)
+        if r.returncode != 0: return None
+        return json.loads(r.stdout)
+    except Exception:
+        return None
+
+
 def build_prompt(name, paras):
     body = "\n\n".join((f"[{i}] ## {t}" if h else f"[{i}] {t}") for i, t, h in paras)
-    return (INSTRUCTIONS + "\n\n######## STANDARDS ########\n" + standards_text() +
-            f"\n\n######## STRAND: {name} ########\n(Numbers in brackets are paragraph ids; '##' marks a heading.)\n\n" + body + "\n")
+    prompt = (INSTRUCTIONS + "\n\n######## STANDARDS ########\n" + standards_text() +
+              f"\n\n######## STRAND: {name} ########\n(Numbers in brackets are paragraph ids; '##' marks a heading.)\n\n" + body + "\n")
+    block = _corpus("block", [[i, t, h] for i, t, h in paras])
+    if isinstance(block, dict) and block.get("block"):
+        prompt = prompt.replace("\n\n######## STRAND:", "\n\n" + block["block"] + "\n\n######## STRAND:", 1)
+    return prompt
 
 
 CITE_BITS = re.compile(r"\b(?:1[5-9]|20)\d{2}[a-z]?\b|\bpp?\.\s*\d+|\(\s*[A-Z][^()]{0,80}?\d{4}[^()]*\)|[\"“][^\"”]{3,}[\"”]")
@@ -152,6 +176,14 @@ def call_codex(prompt, workdir):
     except ValueError: raise Unavailable("GPT's answer wasn't readable JSON. Try again.")
 
 
+def para_ref(cur, i):
+    """Turn GPT's internal paragraph number into the paragraph's opening words."""
+    p = cur.get(i)
+    if not p: return f"[{i}]"
+    w = p["text"].split()
+    return "the paragraph beginning \u201c" + " ".join(w[:6]) + ("\u2026" if len(w) > 6 else "") + "\u201d"
+
+
 def merge(root, name, stem, answer, sent):
     """Validate GPT's suggestions against the CURRENT text and append them. Returns counts."""
     path = os.path.join(root, stem + ".docx")
@@ -162,6 +194,8 @@ def merge(root, name, stem, answer, sent):
     n = sum(1 for s in items if str(s.get("id", "")).startswith("g")) + 1
     today = dt.date.today().isoformat()
     added = dropped = downgraded = 0
+    # pass 1: validate against the current text
+    valid = []
     for s in answer.get("suggestions", [])[:40]:
         old = str(s.get("old") or ""); new = s.get("new"); why = str(s.get("why") or "").strip()
         pi = s.get("paragraph")
@@ -175,6 +209,18 @@ def merge(root, name, stem, answer, sent):
             elif adds_evidence(old, new):
                 why = (why + " [GPT's rewrite added a citation, year, page or quotation that isn't in the text, so it is shown as a note only.]").strip()
                 new = None; downgraded += 1
+        valid.append([old, new, why])
+    # pass 2: one style-corpus screen of the surviving rewrites (copied published wording, AI-typical phrases)
+    rewrites = [v for v in valid if v[1] is not None]
+    problems = _corpus("screen", [[o, nw] for o, nw, _ in rewrites]) if rewrites else None
+    if isinstance(problems, list) and len(problems) == len(rewrites):
+        for v, pr in zip(rewrites, problems):
+            if pr:
+                v[2] = (v[2] + " [Style guard: " + "; ".join(str(x) for x in pr) + "; shown as a note only.]").strip()
+                v[1] = None; downgraded += 1
+    # pass 3: append
+    for old, new, why in valid:
+        why = re.sub(r"\[(\d+)\]", lambda m: para_ref(cur, int(m.group(1))), why)
         if (old, new) in have: continue
         items.append({"id": f"g{n}", "by": BY, "old": old, "new": new, "why": why or "(no reason given)",
                       "date": today, "status": "pending"})

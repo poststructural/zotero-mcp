@@ -327,7 +327,7 @@ dialog textarea{{min-height:70px;resize:vertical}}
 #toast{{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:13.5px;display:none}}
 </style></head><body class="{live}"><main>
 <div class="top"><div><h1>Dissertation dashboard</h1><div class="muted small">Built {now} from the files in this folder</div></div>
-<div class="pills"><span class="pill">Dorothea: <b>{wed}</b> ({when})</span><span class="pill"><b>{you}</b> waiting on you</span><span class="pill"><b>{checks}</b> open [CHECK]s</span><span class="pill"><b>{green}</b> green passages to accept</span></div></div>
+<div class="pills"><span class="pill">Dorothea: <b>{wed}</b> ({when})</span><span class="pill"><b>{you}</b> waiting on you</span><span class="pill"><b>{checks}</b> open [CHECK]s</span><span class="pill"><b>{green}</b> green passages to accept</span><a class="pill live-only" href="/sources"><b>Sources to find →</b></a></div></div>
 <div class="grid">{cards}</div>
 <h2 class="sect">Tasks</h2>
 <div class="chips">{chips}</div>

@@ -15,6 +15,7 @@ sys.path.insert(0, HERE)
 import make_dashboard as md  # noqa: E402
 import review as rv  # noqa: E402
 import gpt_review as gpt  # noqa: E402
+import sources_page as sp  # noqa: E402
 from urllib.parse import urlparse, parse_qs
 
 # Server mode (Ubuntu, behind Cloudflare Access) is set by environment variables;
@@ -258,6 +259,12 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers(); self.wfile.write(data); return
+        if u.path == "/sources":
+            try:
+                with LOCK: out = sp.render(TOKEN)
+                return self.send(200, out, "text/html")
+            except Exception as e:
+                return self.send(500, f"<pre>Sources error: {md.E(e)}</pre>", "text/html")
         if u.path == "/gpt_status":
             name = (parse_qs(u.query).get("s") or [""])[0]
             return self.send(200, json.dumps(JOBS.get(name) or {"state": "idle"}))
@@ -297,6 +304,17 @@ class H(BaseHTTPRequestHandler):
                 gpt_start(str(d.get("strand", "")))
                 return self.send(200, '{"ok":true}')
             except Bad as e: return self.send(400, json.dumps({"error": str(e)}))
+        if self.path == "/sources":
+            try:
+                if d.get("op") == "status":
+                    with LOCK: sp.set_status(str(d.get("id", "")), str(d.get("status", "")))
+                    return self.send(200, '{"ok":true}')
+                if d.get("op") == "recheck":
+                    res = sp.recheck()  # network calls to Zotero; not under LOCK
+                    return self.send(200, json.dumps({"ok": True, **res}))
+                return self.send(400, '{"error":"Unknown request"}')
+            except sp.Bad as e: return self.send(400, json.dumps({"error": str(e)}))
+            except Exception as e: return self.send(500, json.dumps({"error": f"Error: {e}"}))
         if self.path == "/review":
             try:
                 with LOCK: review_op(d)
