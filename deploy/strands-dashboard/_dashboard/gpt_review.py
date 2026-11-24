@@ -41,11 +41,14 @@ SCHEMA = {
         "overall": {"type": "string"},
         "suggestions": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["paragraph", "old", "new", "why"],
+            "required": ["paragraph", "action", "scope", "old", "new", "after", "why"],
             "properties": {
                 "paragraph": {"type": "integer"},
+                "action": {"type": "string", "enum": ["replace", "delete", "move", "flag"]},
+                "scope": {"type": "string", "enum": ["span", "paragraph"]},
                 "old": {"type": "string"},
                 "new": {"type": ["string", "null"]},
+                "after": {"type": ["string", "null"]},
                 "why": {"type": "string"},
             }}},
     },
@@ -57,16 +60,21 @@ TASK: REVIEW and light REVISE. Find the highest-leverage problems against the st
 
 HARD RULES ON EVIDENCE (these override everything else):
 - You cannot see the sources. Never add, change or guess a citation, author, year, page number, quotation, sample size, method or finding.
-- Paraphrase takes author and year with no page number; a direct quotation needs a verified page number. If a quotation lacks a page, or a claim needs a source, or a detail looks doubtful, do not fix it: make a flag (new = null) whose "why" begins with [CHECK] and says what must be verified.
+- Paraphrase takes author and year with no page number; a direct quotation needs a verified page number. If a quotation lacks a page, or a claim needs a source, or a detail looks doubtful, do not fix it: make a flag (action "flag", new = null) whose "why" begins with [CHECK] and says what must be verified.
 - You may insert the literal marker [CHECK] into a rewrite. Keep every existing [CHECK] mark unless the "why" explains that the sentence carrying it was cut.
 - Keep a study's results, its authors' interpretations and Austin's own synthesis distinct; flag places where they blur.
 
+CURRENT DECISIONS: strand_framing.md gives each strand's accepted framing argument and the cross-strand decisions in force; the checklist's decisions log lists only current decisions. Judge the thesis and summary against the accepted framing argument. Do not propose moving a study's full review to another strand; that placement is already decided. Survey and qualitative study paragraphs should follow Canon_study_paragraph_templates.md. Score judgment dimensions against the examples in anchors.md.
+
 FORMAT OF EACH SUGGESTION:
 - "paragraph": the number shown in brackets before the paragraph.
-- "old": an exact, character-for-character copy of a short span from that paragraph (a phrase or one or two sentences; never the whole paragraph unless it is one sentence). It must occur only once in that paragraph.
-- "new": the replacement for exactly that span, or null for a comment-only flag.
+- "action": "replace" (rewrite a span), "delete" (cut a span or a whole paragraph), "move" (move a span or a whole paragraph to another place), or "flag" (a question or [CHECK] for Austin or Claude; no change).
+- "scope": "span" when "old" is a phrase or sentences inside the paragraph; "paragraph" when the action applies to the whole paragraph (then "old" is just the paragraph's first sentence, copied exactly).
+- "old": an exact, character-for-character copy of a short span from that paragraph (a phrase or one or two sentences; never the whole paragraph). It must occur only once in that paragraph.
+- "new": for "replace", the replacement for exactly that span; null for every other action.
+- "after": for "move", an exact copy of the short span (end of a sentence or the last sentence of a paragraph) that the moved text should follow; it must occur only once in the strand. With scope "paragraph", the moved paragraph becomes a new paragraph after the paragraph containing "after". null for every other action.
 - "why": one or two plain sentences (refer to other paragraphs by their opening words, not by bracket number) naming the problem (cite the rubric dimension, Dorothea standard or slop pattern id where one applies).
-Give at most 30 suggestions, most important first. Skip trivia.
+Use "delete" and "move" for REORGANIZE advice instead of describing the cut or move in a flag. Give at most 30 suggestions, most important first. Skip trivia.
 
 "overall": 120-250 words. Score the rubric dimensions that apply (1-4) with a short quoted piece of evidence for each, name the single highest-leverage improvement, and note anything you think Claude-style revision may have flattened. Plain prose, no headings.
 """
@@ -190,41 +198,57 @@ def merge(root, name, stem, answer, sent):
     cur = {p["i"]: p for p in rv.paragraphs(path) if p["text"].strip() and not p["notes"]}
     sent_text = {i: t for i, t, _ in sent}
     items = rv.load_sugg(root, stem)
-    have = {(s.get("old"), s.get("new")) for s in items if s.get("status", "pending") == "pending"}
-    n = sum(1 for s in items if str(s.get("id", "")).startswith("g")) + 1
+    have = {(s.get("old"), s.get("new"), rv.action(s)) for s in items if rv.is_open(s)}
+    n = max([int(m.group(1)) for s in items for m in [re.match(r"g(\d+)$", str(s.get("id", "")))] if m] or [0]) + 1
     today = dt.date.today().isoformat()
     added = dropped = downgraded = 0
+    body_texts = [q["text"] for q in cur.values()]
     # pass 1: validate against the current text
     valid = []
     for s in answer.get("suggestions", [])[:40]:
         old = str(s.get("old") or ""); new = s.get("new"); why = str(s.get("why") or "").strip()
+        act = s.get("action") if s.get("action") in ("replace", "delete", "move", "flag") else ("flag" if new is None else "replace")
+        after = s.get("after")
         pi = s.get("paragraph")
         p = cur.get(pi)
         if not old or p is None or sent_text.get(pi) != p["text"] or p["text"].count(old) != 1 \
-                or sum(1 for q in cur.values() if old in q["text"]) != 1:
+                or sum(1 for t in body_texts if old in t) != 1:
             dropped += 1; continue
-        if new is not None:
-            new = str(new)
-            if new == old: new = None
+        if s.get("scope") == "paragraph" and act in ("delete", "move"):
+            old = p["text"]
+        if act == "move":
+            after = str(after or "")
+            hits = [t for t in body_texts if after and after in t]
+            if len(hits) != 1 or hits[0].count(after) != 1 or (old == p["text"] and hits[0] == p["text"]):
+                why = (why + " [GPT proposed a move but its destination wasn't found exactly once, so it is shown as a note only.]").strip()
+                act = "flag"; after = None
+        else:
+            after = None
+        if act != "replace": new = None
+        if act == "replace":
+            new = "" if new is None else str(new)
+            if new == old: act, new = "flag", None
             elif adds_evidence(old, new):
                 why = (why + " [GPT's rewrite added a citation, year, page or quotation that isn't in the text, so it is shown as a note only.]").strip()
-                new = None; downgraded += 1
-        valid.append([old, new, why])
+                act, new = "flag", None; downgraded += 1
+        valid.append([old, new, why, act, after])
     # pass 2: one style-corpus screen of the surviving rewrites (copied published wording, AI-typical phrases)
-    rewrites = [v for v in valid if v[1] is not None]
-    problems = _corpus("screen", [[o, nw] for o, nw, _ in rewrites]) if rewrites else None
+    rewrites = [v for v in valid if v[3] == "replace"]
+    problems = _corpus("screen", [[v[0], v[1]] for v in rewrites]) if rewrites else None
     if isinstance(problems, list) and len(problems) == len(rewrites):
         for v, pr in zip(rewrites, problems):
             if pr:
                 v[2] = (v[2] + " [Style guard: " + "; ".join(str(x) for x in pr) + "; shown as a note only.]").strip()
-                v[1] = None; downgraded += 1
+                v[1] = None; v[3] = "flag"; downgraded += 1
     # pass 3: append
-    for old, new, why in valid:
+    for old, new, why, act, after in valid:
         why = re.sub(r"\[(\d+)\]", lambda m: para_ref(cur, int(m.group(1))), why)
-        if (old, new) in have: continue
-        items.append({"id": f"g{n}", "by": BY, "old": old, "new": new, "why": why or "(no reason given)",
-                      "date": today, "status": "pending"})
-        have.add((old, new)); n += 1; added += 1
+        if (old, new, act) in have: continue
+        item = {"id": f"g{n}", "by": BY, "action": act, "old": old, "new": new, "why": why or "(no reason given)",
+                "date": today, "status": "pending"}
+        if act == "move": item["after"] = after
+        items.append(item)
+        have.add((old, new, act)); n += 1; added += 1
     rv.save_sugg(root, stem, items)
     os.makedirs(OPINIONS, exist_ok=True)
     op = os.path.join(OPINIONS, stem + ".json")

@@ -146,12 +146,19 @@ def strand_info(name, stem):
         try: vwc = word_count(read_docx(v)[0])
         except Exception: pass
     notes_open = [CHECK.sub("", p["text"]) for p in paras if p["notes"] and re.match(r"^(Still open|Remaining|Open \[CHECK\]|Not yet done)", p["text"])]
+    try:
+        sys.path.insert(0, HERE); import review as _rv
+        sc = _rv.sugg_counts(ROOT, stem)
+        cites = [{"section": p["section"], "kind": k, "text": x} for p in body if not p["heading"] for k, x in _rv.cite_issues(p["text"])]
+    except Exception:
+        sc, cites = {"open": 0, "flags": 0, "queued": 0, "answered": 0}, []
     return {"name": name, "file": stem + ".docx", "words": wc,
             "modified": dt.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%b %d, %I:%M %p"),
             "version": os.path.basename(v) if v else None, "version_words": vwc,
             "outline": [(p["text"], p["section"] != p["text"]) for p in body if p["heading"]][1:],
             "checks": checks, "green": green, "tc": tc,
-            "comments": comments, "flags": flags, "sandwich": sandwich, "notes_open": notes_open}
+            "comments": comments, "flags": flags, "sandwich": sandwich, "notes_open": notes_open,
+            "sugg": sc, "cites": cites}
 
 # ---------- Tasks.md ----------
 def parse_tasks(path):
@@ -208,7 +215,7 @@ def render(strands, stages, groups, order, live=False, token="", progress=None):
         if not live: return ""
         pr = (progress or {}).get(n)
         lab = f"{pr[0]} of {pr[1]} reviewed" if pr else "Go paragraph by paragraph"
-        if pr and len(pr) > 2 and pr[2]: lab += f" · {pr[2]} suggestion{'s' if pr[2] > 1 else ''} from Claude"
+        if pr and len(pr) > 2 and pr[2]: lab += f" · {pr[2]} open item{'s' if pr[2] > 1 else ''} from the reviewers"
         return f'<a class="review" href="/review?s={E(n)}"><b>Review this strand →</b><span>{E(lab)}</span></a>'
     cards = []
     for s in strands:
@@ -226,12 +233,15 @@ def render(strands, stages, groups, order, live=False, token="", progress=None):
         fl = s["flags"]; nflags = sum(fl.values())
         def stat(n, label, cls="", tip=""):
             return f'<div class="stat {cls if n else "zero"}" title="{E(tip)}"><b>{n}</b><span>{E(label)}</span></div>'
-        stats = (stat(len(s["checks"]), "open [CHECK]s", "warn", "Unverified details still marked in the manuscript text")
-                 + stat(len(s["green"]), "green passages", "info", "Nov 20 changes still highlighted green, i.e. not yet accepted by you")
-                 + stat(ins + dele, "tracked changes", "info", by or "No tracked changes")
-                 + stat(len(s["comments"]), "comments", "", ", ".join(sorted(set(c['author'] for c in s['comments'])))))
+        sc = s.get("sugg") or {}
+        nchk = len(s["checks"]) + sc.get("flags", 0)
+        stats = (stat(nchk, "open [CHECK]s", "warn", f'{len(s["checks"])} marked in the text, {sc.get("flags", 0)} open questions from the reviewers ({sc.get("queued", 0)} sent to Claude\'s evidence check)')
+                 + stat(sc.get("answered", 0), "answers to read", "info", "Questions Claude has checked against the source; read and close them on the review page")
+                 + stat(len(s.get("cites", [])), "citation-rule checks", "warn", "Page numbers on paraphrases, or quotations without a page. Details on the review page.")
+                 + stat(len(s["green"]), "green passages", "info", "Nov 20 changes still highlighted green, i.e. not yet accepted by you"))
         checks = "".join(f'<li><span class="sec">{E(c["section"])}</span>{E(c["parts"][0])}<mark>{E(c["parts"][1])}</mark>{E(c["parts"][2])}</li>' for c in s["checks"]) or '<li class="muted">None in the manuscript text.</li>'
         green = "".join(f'<li><span class="sec">{E(g["section"])}</span>{E(g["text"][:260])}{"…" if len(g["text"])>260 else ""}</li>' for g in s["green"]) or '<li class="muted">Nothing highlighted.</li>'
+        cites_html = "".join('<li><span class="sec">' + E(c["section"]) + '</span>' + ("Page on a paraphrase: " if c["kind"] == "page_on_paraphrase" else "Quotation without a page: ") + E(c["text"][:240]) + '</li>' for c in s.get("cites", [])) or '<li class="muted">None found.</li>'
         outline = "".join(f'<li class="{"sub" if sub else ""}">{E(h)}</li>' for h, sub in s["outline"])
         slopl = "".join(f'<li><span>{E(k)}</span><b>{v}</b></li>' for k, v in fl.items())
         notes = "".join(f"<li>{E(n)}</li>" for n in s["notes_open"])
@@ -243,6 +253,7 @@ def render(strands, stages, groups, order, live=False, token="", progress=None):
   <div class="stats">{stats}</div>
   <p class="meta">{s["words"]:,} words{delta} · saved {E(s["modified"])}{(" · snapshot " + E(snap)) if snap else ""}</p>
   <details><summary>Open [CHECK]s ({len(s["checks"])})</summary><ul class="list">{checks}</ul></details>
+  <details><summary>Citation-rule checks ({len(s.get("cites", []))})</summary><ul class="list">{cites_html}</ul></details>
   <details><summary>Unaccepted green passages ({len(s["green"])})</summary><ul class="list">{green}</ul></details>
   <details><summary>Slop screen ({nflags} flags · {s["sandwich"]}% sandwich paragraphs)</summary><ul class="slop">{slopl}</ul>
     <p class="muted small">A light version of slop_audit.py. Counts are prompts to look, not verdicts. Dorothea's v5 baseline was about 20% sandwich paragraphs.</p></details>
@@ -261,7 +272,7 @@ def render(strands, stages, groups, order, live=False, token="", progress=None):
         cols.append(f'<div class="{cls}"><h3>{E(g)} <span class="count">{open_n}</span></h3><ul>{"".join(items)}</ul><button class="add" data-group="{E(g)}">+ Add task</button></div>')
     chips = '<button class="chip on" data-f="">All</button>' + "".join(f'<button class="chip" data-f="{E(t)}">{E(t)}</button>' for t in tagset)
     you = sum(1 for g in order if re.search(r"\byou\b", g, re.I) for t in groups[g] if not t["done"])
-    tot_checks = sum(len(s.get("checks", [])) for s in strands); tot_green = sum(len(s.get("green", [])) for s in strands)
+    tot_checks = sum(len(s.get("checks", [])) + (s.get("sugg") or {}).get("flags", 0) for s in strands); tot_green = sum(len(s.get("green", [])) for s in strands)
     groups_json = json.dumps(order).replace("</", "<\\/"); tags_json = json.dumps(tagset).replace("</", "<\\/")
     return TEMPLATE.format(stages_json=json.dumps(STAGES), live="live" if live else "static", token=E(token), groups_json=groups_json, tags_json=tags_json, now=E(now), wed=wed.strftime("%A, %B %d"), when=when, you=you,
                            checks=tot_checks, green=tot_green, cards="\n".join(cards),

@@ -157,18 +157,38 @@ def review_op(d):
         bx = rv.GREEN.sub("", base[bi]["xml"])
         if i < 0: raise rv.Refused("This one sits at the very top; ask Claude to restore it.")
         rv.change(path, md.ROOT, "restore", i, ex, base_xml=bx); rv.mark(md.ROOT, name, base[bi]["text"])
-    elif op == "s_accept":
+    elif op in ("s_accept", "s_queue", "s_mark", "s_resolve", "s_close"):
         items = rv.load_sugg(md.ROOT, stem)
         sg = next((x for x in items if x.get("id") == d.get("id")), None)
-        if not sg or sg.get("status", "pending") != "pending": raise Conflict("That suggestion is gone. Reloading…")
-        if "text" in d:
-            new = str(d.get("text", "")).replace("\r\n", "\n").strip(); status = "edited"
+        if not sg or not rv.is_open(sg): raise Conflict("That suggestion is gone. Reloading…")
+        act = rv.action(sg)
+        if sg.get("old") and sg["old"] not in ex: raise Conflict("The paragraph changed since this suggestion was made. Reloading…")
+        if op == "s_queue":
+            rv.set_status(md.ROOT, stem, sg["id"], "queued")
+        elif op == "s_resolve":
+            rv.set_status(md.ROOT, stem, sg["id"], "resolved")
+        elif op == "s_close":
+            rv.set_status(md.ROOT, stem, sg["id"], "closed")
+        elif op == "s_mark":
+            mark_txt = f'{sg["old"]} [CHECK: see {sg.get("by", "Claude")} {sg["id"]}]'
+            rv.change(path, md.ROOT, "set_text", i, ex, new_text=ex.replace(sg["old"], mark_txt, 1))
+            rv.set_status(md.ROOT, stem, sg["id"], "marked")
+        elif act == "move":
+            rv.move(path, md.ROOT, i, ex, sg["old"], str(sg.get("after") or ""))
+            rv.set_status(md.ROOT, stem, sg["id"], "accepted")
+        elif act == "delete" and rv.whole_para(ex, sg):
+            rv.change(path, md.ROOT, "delete", i, ex)
+            rv.set_status(md.ROOT, stem, sg["id"], "accepted")
+        elif act == "flag":
+            rv.set_status(md.ROOT, stem, sg["id"], "resolved")
         else:
-            new = rv.sugg_result(ex, sg); status = "accepted"
-        if new != ex:
-            if sg.get("old") and sg["old"] not in ex: raise Conflict("The paragraph changed since this suggestion was made. Reloading…")
-            rv.change(path, md.ROOT, "set_text", i, ex, new_text=new)
-        rv.set_status(md.ROOT, stem, sg["id"], status)
+            if "text" in d:
+                new = str(d.get("text", "")).replace("\r\n", "\n").strip(); status = "edited"
+            else:
+                new = rv.sugg_result(ex, sg); status = "accepted"
+            if not new.strip(): raise Bad("That would leave the paragraph empty. Use Delete instead.")
+            if new != ex: rv.change(path, md.ROOT, "set_text", i, ex, new_text=new)
+            rv.set_status(md.ROOT, stem, sg["id"], status)
     elif op == "s_reject":
         rv.set_status(md.ROOT, stem, str(d.get("id")), "rejected")
     elif op == "ok_removed":
