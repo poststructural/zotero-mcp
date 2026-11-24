@@ -547,3 +547,72 @@ def discover_citations(
                    f"{res.refound_prior} already in prior drafts")
         out += _render_hits(store, res.record_ids)
     return "\n".join(out)
+
+
+@mcp.tool(
+    name="discover_access",
+    description=(
+        "Links to open each source: a legal open-access copy first, then the library's "
+        "EZproxy (DOI or page), its link resolver and catalog search. `items` are log record "
+        "ids or DOIs (up to 25). Links open in the reader's own signed-in browser; no "
+        "credentials are used. Library set by ZOTERO_MCP_LIBRARY (e.g. 'uconn')."
+    ),
+)
+def discover_access(items: list[str], check_open_access: bool = True, *, ctx: Context) -> str:
+    from zotero_mcp.provenance.access import access_links, bare_doi, current_profile
+
+    src = _sources()
+    profile = current_profile()
+    store = get_store()
+    oa_adapters = src.enabled("open_access") if check_open_access else []
+    if not items:
+        return "Error: give at least one log record id or DOI."
+    head = [f"# Access links ({profile.label if profile else 'no library configured'})"]
+    if profile is None:
+        head.append("Set ZOTERO_MCP_LIBRARY=uconn (or ZOTERO_MCP_LIBRARY_PROXY / _OPENURL / _SEARCH) "
+                    "on the server for library links.")
+    out = head
+    for raw in list(items)[:25]:
+        s = str(raw).strip()
+        title = authors = venue = None
+        year = None
+        if s.isdigit():
+            try:
+                r = store.record(int(s))
+            except KeyError as e:
+                out.append(f"\n## {s}\nError: {e}")
+                continue
+            doi, title, authors, year = r["doi"], r["title"] or None, r["authors"], r["year"]
+            name = f"#{s} {authors} ({year}). {title or '(no title)'}"
+        else:
+            doi = bare_doi(s)
+            name = f"DOI {doi}"
+            if not doi or "/" not in doi:
+                out.append(f"\n## {s}\nError: not a record id or DOI.")
+                continue
+        oa_url, oa_notes = None, []
+        if doi:
+            for a in oa_adapters:
+                try:
+                    oa_url = a.open_access(doi)
+                except src.SourceUnavailable as e:
+                    oa_notes.append(f"{a.label} check failed ({e}); not the same as 'no OA copy'")
+                    continue
+                if oa_url:
+                    oa_notes.append(f"OA copy found via {a.label}")
+                    break
+            else:
+                if oa_adapters and not oa_url and not any("failed" in n for n in oa_notes):
+                    oa_notes.append("no OA copy reported by " + ", ".join(a.label for a in oa_adapters))
+        links = access_links(profile, doi=doi, title=title, authors=authors, year=year, venue=venue,
+                             open_access_url=oa_url)
+        out.append(f"\n## {name}")
+        out += [f"- {n}" for n in oa_notes]
+        if not links:
+            out.append("- No links: no DOI or title to work from.")
+        for link in links:
+            note = f" ({link.note})" if link.note else ""
+            out.append(f"- {link.label}: {link.url}{note}")
+    if len(items) > 25:
+        out.append(f"\n… {len(items) - 25} more not shown; call again with the rest.")
+    return "\n".join(out)

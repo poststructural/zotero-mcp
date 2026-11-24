@@ -41,6 +41,9 @@ The `provenance` toolset is off by default. To enable it on the server, add to
 ```bash
 ZOTERO_MCP_TOOLSETS=default,provenance   # `all` does not include it; name it
 ZOTERO_MCP_PROVENANCE_DB=/opt/zotero-mcp/data/provenance.db
+ZOTERO_MCP_LIBRARY=uconn                  # "open via UConn" links in discover_access
+ZOTERO_MCP_CONTACT_EMAIL=                 # optional; contact address for OpenAlex's polite pool
+CORE_API_KEY=                             # optional; free key from core.ac.uk/services/api
 ```
 
 then `sudo install -d -o zoteromcp -g zoteromcp -m 700 /opt/zotero-mcp/data` and
