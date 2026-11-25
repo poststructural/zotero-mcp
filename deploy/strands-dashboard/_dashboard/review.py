@@ -328,11 +328,59 @@ def load_sugg(root, stem):
     except (OSError, ValueError): return []
 
 def save_sugg(root, stem, items):
+    """Write the suggestions file. Tags every suggestion with its author model ("by") and type, and
+    refuses to save an open Claude prose rewrite (review roles: only GPT writes prose)."""
+    bad = [sg.get("id", "?") for sg in items if is_open(sg) and claude_prose_blocked(sg)]
+    if bad:
+        raise Refused("Not saved: " + ", ".join(bad) + " would be Claude prose rewrites. Under the review roles only GPT "
+                      "writes prose; send the passage to GPT as a brief (gpt_review.py --brief=...).")
+    for sg in items:
+        sg.setdefault("by", "Claude"); sg["type"] = kind(sg)
     p = sugg_path(root, stem); os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p + ".tmp", "w", encoding="utf-8") as f: json.dump(items, f, indent=1, ensure_ascii=False)
     os.replace(p + ".tmp", p)
 
+# Review roles (standards/review_roles.md; Austin, Nov 23 and Nov 25): GPT with the style corpus
+# writes prose. Claude may rewrite only to fix evidence (the suggestion names its "source", a
+# source and page or [CHECK], in "source" or in its reason) or make a small mechanical edit (a renumbered heading, a
+# cross-reference's wording). Austin's own wording entered for him carries "wording": "Austin".
+# Any other Claude rewrite is shown as a note and cannot be accepted.
+CLAUDE_MAX_NEW_WORDS = 10
+_WORD = re.compile(r"[\w’'-]+")
+EVIDENCE_WHY = re.compile(r"\bpp?\.\s*\d|\[CHECK")
+
+def new_words(old, new):
+    """How many words the rewrite adds that the old text didn't have (counted with repeats)."""
+    pool = {}
+    for w in _WORD.findall((old or "").lower()): pool[w] = pool.get(w, 0) + 1
+    n = 0
+    for w in _WORD.findall((new or "").lower()):
+        if pool.get(w): pool[w] -= 1
+        else: n += 1
+    return n
+
+def claude_prose_blocked(sg):
+    if sg.get("by", "Claude") != "Claude": return False
+    a = sg.get("action")
+    if a not in ("replace", None) or sg.get("new") is None: return False
+    if str(sg.get("source") or "").strip(): return False   # evidence fix: names its source and page
+    if EVIDENCE_WHY.search(str(sg.get("why") or "")): return False  # evidence fix: the reason cites a page or [CHECK]
+    if sg.get("wording") == "Austin": return False          # Austin's own words, entered for him
+    return new_words(sg.get("old"), sg.get("new")) > CLAUDE_MAX_NEW_WORDS
+
+def kind(sg):
+    """What a suggestion is, for the label and the review-roles check."""
+    a = action(sg)
+    if a == "flag": return "flag"
+    if a == "delete": return "cut"
+    if a == "move": return "move"
+    if sg.get("by", "Claude") != "Claude": return "prose"
+    if str(sg.get("source") or "").strip() or EVIDENCE_WHY.search(str(sg.get("why") or "")): return "evidence"
+    if sg.get("wording") == "Austin": return "austin-wording"
+    return "mechanical"
+
 def action(sg):
+    if claude_prose_blocked(sg): return "flag"
     a = sg.get("action")
     if a in ("replace", "delete", "move", "flag"): return a
     return "flag" if sg.get("new") is None else "replace"
@@ -428,6 +476,8 @@ FLAG_STATE = {"queued": "Sent to Claude's evidence check", "answered": "Answered
 def sugg_html(t, sg, E):
     a = action(sg); st = sg.get("status", "pending"); by = sg.get("by", "Claude")
     head = {"replace": "suggests", "delete": "suggests cutting", "move": "suggests moving", "flag": "asks to check"}[a]
+    if a == "replace": head += {"evidence": " an evidence fix", "mechanical": " a mechanical fix",
+                                "austin-wording": " your own wording", "prose": " a prose rewrite"}.get(kind(sg), "")
     body = ""
     if a == "replace":
         body = f'<div class="sdiff">{diff_html(t, sugg_result(t, sg))}</div>'
@@ -436,6 +486,9 @@ def sugg_html(t, sg, E):
     elif a == "move":
         body = (f'<div class="sdiff"><del>{html.escape(sg["old"][:400])}{"…" if len(sg["old"]) > 400 else ""}</del></div>'
                 f'<div class="small muted">Goes right after: “…{html.escape(str(sg.get("after", ""))[-160:])}”</div>')
+    if claude_prose_blocked(sg):
+        body = ('<div class="small muted">Blocked by the review roles: this is a Claude prose rewrite, which only GPT may write. '
+                'It is kept as a note. Proposed text: “' + html.escape(str(sg.get("new"))[:600]) + '”</div>')
     ans = ""
     if st == "answered" and sg.get("answer"):
         ans = (f'<div class="answer"><b>{E(sg.get("answer_by", "Claude"))} checked the source</b>'

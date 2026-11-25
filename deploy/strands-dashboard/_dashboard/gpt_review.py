@@ -20,6 +20,8 @@ Setup (once): install Node.js, then `npm install -g @openai/codex`, then run
 _dashboard/gpt_settings.json, e.g. {"model": "gpt-5.5", "effort": "high"}.
 
 Command line test:  python gpt_review.py "Censorship"
+Targeted passages:  python gpt_review.py "Censorship" --brief=briefs/Censorship.md
+  (each brief names a paragraph, an exact span to replace, and the structural job; GPT writes the prose)
 Standard library only.
 """
 import datetime as dt, json, os, re, shutil, subprocess, sys, tempfile
@@ -80,6 +82,9 @@ Use "delete" and "move" for REORGANIZE advice instead of describing the cut or m
 """
 
 
+BRIEF_TASK = """TARGETED TASK (this replaces the TASK paragraph above; every other rule still applies): Austin has asked for specific passages to be written. For each numbered BRIEF below, return exactly one suggestion with action "replace", scope "span", "paragraph" set to the brief's paragraph number, "old" copied exactly from the brief, and "new" containing your prose for that slot. Write in Austin's register, as the style corpus shows it. Do the structural job the brief names, using only findings already stated in the strand texts or the brief. Do not add citations, years, page numbers or quotations: name a study by its author(s) alone, or describe the finding. If a brief cannot be done without new evidence, return a flag with [CHECK] for it instead. Return no other suggestions. In "overall", say briefly how the passages connect the strands."""
+
+
 class Unavailable(Exception): pass
 
 
@@ -135,9 +140,10 @@ def _corpus(cmd, payload, extra=()):
         return None
 
 
-def build_prompt(name, paras):
+def build_prompt(name, paras, brief=None):
     body = "\n\n".join((f"[{i}] ## {t}" if h else f"[{i}] {t}") for i, t, h in paras)
-    prompt = (INSTRUCTIONS + "\n\n######## STANDARDS ########\n" + standards_text() +
+    head = INSTRUCTIONS + ("\n\n" + BRIEF_TASK + "\n\n######## BRIEFS ########\n" + brief.strip() if brief else "")
+    prompt = (head + "\n\n######## STANDARDS ########\n" + standards_text() +
               f"\n\n######## STRAND: {name} ########\n(Numbers in brackets are paragraph ids; '##' marks a heading.)\n\n" + body + "\n")
     block = _corpus("block", [[i, t, h] for i, t, h in paras])
     if isinstance(block, dict) and block.get("block"):
@@ -266,14 +272,14 @@ def load_opinion(stem):
     except (OSError, ValueError): return None
 
 
-def run(root, name, stem, lock=None, progress=lambda m: None):
+def run(root, name, stem, lock=None, progress=lambda m: None, brief=None):
     """Full pass for one strand. `lock` guards file reads/writes; it is NOT held while GPT thinks."""
     codex_path()
     path = os.path.join(root, stem + ".docx")
     if lock:
         with lock: sent = manuscript(path)
     else: sent = manuscript(path)
-    prompt = build_prompt(name, sent)
+    prompt = build_prompt(name, sent, brief)
     progress(f"GPT is reading {name} (about {len(prompt) // 4000}k tokens). This usually takes a few minutes.")
     with tempfile.TemporaryDirectory(prefix="gpt_review_") as wd:
         answer = call_codex(prompt, wd)
@@ -286,12 +292,14 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     root = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--root=")), os.path.dirname(HERE))
     prompt_only = "--prompt-only" in sys.argv
+    bf = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--brief=")), None)
+    brief = open(bf, encoding="utf-8").read() if bf else None
     sys.argv = sys.argv[:1]
     import make_dashboard as md
     want = args[0] if args else md.STRANDS[0][0]
     stems = dict(md.STRANDS)
     if want not in stems: sys.exit(f"Unknown strand. Choose one of: {', '.join(stems)}")
     if prompt_only:
-        print(build_prompt(want, manuscript(os.path.join(root, stems[want] + ".docx")))); sys.exit()
-    a, d, g = run(root, want, stems[want], progress=print)
+        print(build_prompt(want, manuscript(os.path.join(root, stems[want] + ".docx")), brief)); sys.exit()
+    a, d, g = run(root, want, stems[want], progress=print, brief=brief)
     print(f"Added {a} GPT suggestion(s); dropped {d} that didn't match the text; {g} rewrite(s) turned into notes.")

@@ -12,3 +12,9 @@ Austin chose this division on 2026-11-23 from the blind pilot votes (GPT with th
 - the accuracy of source-audit details (purpose, method, sample, findings, limits).
 
 Claude writes rewrites only for evidence fixes. Every Claude suggestion names the source and page it rests on, or says [CHECK].
+
+**Enforced in the dashboard (Nov 25).** After Claude's organizing pass included prose rewrites, Austin asked that this never happen again. `review.py` now treats any Claude suggestion that rewrites text as a note that can't be accepted, unless one of these holds:
+- it is an evidence fix that names its `source` (the source and page, or [CHECK]);
+- it is a small mechanical edit that adds 10 or fewer new words, such as a renumbered heading or the wording of a cross-reference.
+
+Transitions, openers, bridges and synthesis prose go to GPT as a brief, using `gpt_review.py "<Strand>" --brief=<file>`. Claude then checks GPT's text for evidence and pages.
